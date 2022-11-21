@@ -115,12 +115,14 @@ ifc <- function(alpha,
                 scale = FALSE) {
 
   ## Checks
-  if(any(class(dist_mat) == "matrix")){
-    if(dim(dist_mat)[1] != dim(dist_mat)[2]){
+  if(class(dist_mat) != 'units'){
+    if(any(class(dist_mat) == "matrix")){
+      if(dim(dist_mat)[1] != dim(dist_mat)[2]){
+        stop("`dist_mat` must be a square distance matrix")
+      }
+    } else {
       stop("`dist_mat` must be a square distance matrix")
     }
-  } else {
-    stop("`dist_mat` must be a square distance matrix")
   }
 
   if(!exists('alpha')){
