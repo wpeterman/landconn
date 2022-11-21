@@ -12,3 +12,5 @@ Depends:
   R (>= 4.0)
 RoxygenNote: 7.2.1
 Roxygen: list(markdown = TRUE)
+URL: https://github.com/wpeterman/landconn
+BugReports: https://github.com/wpeterman/landconn/issues
