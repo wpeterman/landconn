@@ -3,4 +3,4 @@
 export(d_mat)
 export(ifc)
 export(run_cs)
-importFrom(sf,st_distance)
+importFrom(sf,st_coordinates)

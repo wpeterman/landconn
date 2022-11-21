@@ -7,7 +7,7 @@
 d_mat(coords)
 }
 \arguments{
-\item{coords}{Provide a two-column array, matrix, or data.frame with xy coordinates of locations. Alternatively, an object of class \code{sf}.}
+\item{coords}{Provide a two-column array, matrix, or data.frame with xy coordinates of locations.}
 }
 \value{
 A square distance matrix
