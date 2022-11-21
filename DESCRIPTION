@@ -1,0 +1,14 @@
+Package: landconn
+Type: Package
+Title: Landscape Connectivity
+Version: 0.1.0
+Author: Bill Peterman
+Maintainer: Bill Peterman <peterman.73@osu.edu>
+Description: This package contains functions for calculating metrics or executing tools to assess landscape connectivity
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+Depends:
+  R (>= 4.0)
+RoxygenNote: 7.2.1
+Roxygen: list(markdown = TRUE)
