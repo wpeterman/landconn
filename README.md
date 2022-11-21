@@ -4,7 +4,7 @@
 <!-- badges: start -->
 <!-- badges: end -->
 
-This package contains functions to calculate landscape connectivity. These functions have been developed for personal teaching and research purposes, and are subject to update/change as needed for these purposes. Documentation and examples may be limited.
+This package contains functions to calculate landscape connectivity. These functions have been developed for personal teaching and research purposes and are subject to update/change as needed for these purposes. Documentation and examples may be limited.
 
 ## Installation
 
