@@ -8,8 +8,7 @@ ifc(alpha,
            dist_mat,
            model,
            occ_sites = NULL,
-           contrib_area = NULL,
-           focal_area = NULL,
+           patch_area = NULL,
            scale = FALSE)
 }
 \arguments{
@@ -21,9 +20,7 @@ ifc(alpha,
 
 \item{occ_sites}{A 0/1 vector equal in length to the number of sites in the \code{dist_mat}. If provided, only sites indicated with a 1 will contribute to connectivity. If not provided, all sites contribute to connectivity.}
 
-\item{contrib_area}{If provided, the area of habitat patches will contribute to the connectivity of a focal patch}
-
-\item{focal_area}{If provided, the area of the focal patch will contribute to its connectivity to other patches}
+\item{patch_area}{If provided, can be used calculate connectivity as a function of surrounding patched (Model 2), focal patches (Model 3), or both (Model 4). See details}
 
 \item{scale}{Logical (Default = FALSE). If TRUE, connectivity estimates will be scaled to have a maximum of 1.}
 }
@@ -38,23 +35,23 @@ Calculate connectivity using incidence functions
 \deqn{C ~ exp(-(1 / alpha) * dist_mat)}.
 \subsection{CONNECTIVITY MODELS}{
 
-model 1 --> Distance only
-Calculate connectivity as a function of distance.
+model 1 --> Distance only \cr
+Calculate connectivity as a function of distance.\cr
 Hypothesis: Connectivity of patches declines as they become more isolated from other patches
 \deqn{C_i = \sum_{j \ne i }p_j \text{exp} (-\alpha d_{ij})}
 
-model 2 --> Contributing area
-Calculate connectivity, weighting by the area of contributing patches.
+model 2 --> Contributing area \cr
+Calculate connectivity, weighting by the area of contributing patches.\cr
 Hypothesis: Larger patches contribute more individuals
 \deqn{C_i = \sum_{j \ne i }p_j \text{exp} (-\alpha d_{ij})A_j}
 
-model 3 --> Focal area
-Calculate connectivity, weighting by the area of the focal patches.
+model 3 --> Focal area \cr
+Calculate connectivity, weighting by the area of the focal patches.\cr
 Hypothesis: Larger patches have greater attraction
 \deqn{C_i = A_i\sum_{j \ne i }p_j \text{exp} (-\alpha d_{ij})}
 
-model 4 --> Contributing & Focal area
-Hypothesis: Larger patches contribute more individuals and larger patches have greater attraction
+model 4 --> Contributing & Focal area \cr
+Hypothesis: Larger patches contribute more individuals and larger patches have greater attraction \cr
 \deqn{C_i = A_i\sum_{j \ne i }p_j \text{exp} (-\alpha d_{ij})A_j}
 
 \eqn{p_j} (\code{occ_sites}) is the occupancy of site j and modifies which patches contribute to the connectivity of a patch
@@ -94,28 +91,26 @@ p_a <- runif(10, 5, 50)
 (c2 <- ifc(alpha,
            dist_mat,
            model = 2,
-           contrib_area = p_a))
+           patch_area = p_a))
 
 ## Model 3
 (c3 <- ifc(alpha,
            dist_mat,
            model = 3,
-           focal_area = p_a))
+           patch_area = p_a))
 
 ## Model 4
 (c4 <- ifc(alpha,
            dist_mat,
            model = 4,
-           contrib_area = p_a,
-           focal_area = p_a))
+           patch_area = p_a))
 
 ## Model 4, Occupied sites only
 (c4b <- ifc(alpha,
-           dist_mat,
-           model = 4,
-           occ_sites = occ_sites,
-           contrib_area = p_a,
-           focal_area = p_a))
+            dist_mat,
+            model = 4,
+            occ_sites = occ_sites,
+            patch_area = p_a))
 
 }
 \author{

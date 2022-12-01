@@ -7,8 +7,7 @@
 #' @param dist_mat A square pairwise distance matrix
 #' @param model Numeric value 1-4 corresponding to how connectivity will be calculated. See Details
 #' @param occ_sites A 0/1 vector equal in length to the number of sites in the `dist_mat`. If provided, only sites indicated with a 1 will contribute to connectivity. If not provided, all sites contribute to connectivity.
-#' @param contrib_area If provided, the area of habitat patches will contribute to the connectivity of a focal patch
-#' @param focal_area If provided, the area of the focal patch will contribute to its connectivity to other patches
+#' @param patch_area If provided, can be used calculate connectivity as a function of surrounding patched (Model 2), focal patches (Model 3), or both (Model 4). See details
 #' @param scale Logical (Default = FALSE). If TRUE, connectivity estimates will be scaled to have a maximum of 1.
 #'
 #' @return A vector of relative connectivity values for each site
@@ -17,23 +16,23 @@
 #' \deqn{C ~ exp(-(1 / alpha) * dist_mat)}.
 #'
 #' ##### CONNECTIVITY MODELS #####
-#' model 1 --> Distance only
-#' Calculate connectivity as a function of distance.
+#' model 1 --> Distance only \cr
+#' Calculate connectivity as a function of distance.\cr
 #' Hypothesis: Connectivity of patches declines as they become more isolated from other patches
 #' \deqn{C_i = \sum_{j \ne i }p_j \text{exp} (-\alpha d_{ij})}
 #'
-#' model 2 --> Contributing area
-#' Calculate connectivity, weighting by the area of contributing patches.
+#' model 2 --> Contributing area \cr
+#' Calculate connectivity, weighting by the area of contributing patches.\cr
 #' Hypothesis: Larger patches contribute more individuals
 #' \deqn{C_i = \sum_{j \ne i }p_j \text{exp} (-\alpha d_{ij})A_j}
 #'
-#' model 3 --> Focal area
-#' Calculate connectivity, weighting by the area of the focal patches.
+#' model 3 --> Focal area \cr
+#' Calculate connectivity, weighting by the area of the focal patches.\cr
 #' Hypothesis: Larger patches have greater attraction
 #' \deqn{C_i = A_i\sum_{j \ne i }p_j \text{exp} (-\alpha d_{ij})}
 #'
-#' model 4 --> Contributing & Focal area
-#' Hypothesis: Larger patches contribute more individuals and larger patches have greater attraction
+#' model 4 --> Contributing & Focal area \cr
+#' Hypothesis: Larger patches contribute more individuals and larger patches have greater attraction \cr
 #' \deqn{C_i = A_i\sum_{j \ne i }p_j \text{exp} (-\alpha d_{ij})A_j}
 #'
 #' \eqn{p_j} (`occ_sites`) is the occupancy of site j and modifies which patches contribute to the connectivity of a patch
@@ -72,35 +71,32 @@
 #' (c2 <- ifc(alpha,
 #'            dist_mat,
 #'            model = 2,
-#'            contrib_area = p_a))
+#'            patch_area = p_a))
 #'
 #' ## Model 3
 #' (c3 <- ifc(alpha,
 #'            dist_mat,
 #'            model = 3,
-#'            focal_area = p_a))
+#'            patch_area = p_a))
 #'
 #' ## Model 4
 #' (c4 <- ifc(alpha,
 #'            dist_mat,
 #'            model = 4,
-#'            contrib_area = p_a,
-#'            focal_area = p_a))
+#'            patch_area = p_a))
 #'
 #' ## Model 4, Occupied sites only
 #' (c4b <- ifc(alpha,
-#'            dist_mat,
-#'            model = 4,
-#'            occ_sites = occ_sites,
-#'            contrib_area = p_a,
-#'            focal_area = p_a))
+#'             dist_mat,
+#'             model = 4,
+#'             occ_sites = occ_sites,
+#'             patch_area = p_a))
 #'
 #' @usage ifc(alpha,
 #'            dist_mat,
 #'            model,
 #'            occ_sites = NULL,
-#'            contrib_area = NULL,
-#'            focal_area = NULL,
+#'            patch_area = NULL,
 #'            scale = FALSE)
 #'
 #' @export
@@ -110,8 +106,7 @@ ifc <- function(alpha,
                 dist_mat,
                 model,
                 occ_sites = NULL,
-                contrib_area = NULL,
-                focal_area = NULL,
+                patch_area = NULL,
                 scale = FALSE) {
 
   ## Checks
@@ -142,15 +137,9 @@ ifc <- function(alpha,
     }
   }
 
-  if(!is.null(contrib_area)){
-    if(length(contrib_area) != dim(dist_mat)[1]){
-      stop("contrib_area must be a vector of equal length as sites in the dist_mat")
-    }
-  }
-
-  if(!is.null(focal_area)){
-    if(length(focal_area) != dim(dist_mat)[1]){
-      stop("focal_area must be a vector of equal length as sites in the dist_mat")
+  if(!is.null(patch_area)){
+    if(length(patch_area) != dim(dist_mat)[1]){
+      stop("patch_area must be a vector of equal length as sites in the dist_mat")
     }
   }
 
@@ -160,6 +149,7 @@ ifc <- function(alpha,
   c_prob <-
     exp(-(1 / alpha) * dist_mat)  ## calculate connectivity probability
   c_prob <- as.matrix(c_prob)
+  diag(c_prob) <- 0
 
   if(is.null(occ_sites)){
     occ_sites <- rep(1, dim(dist_mat)[1])
@@ -179,7 +169,7 @@ ifc <- function(alpha,
   # ** Method 2 -------------------------------------------------------------
   if(model == 2){
 
-    connectivity <- rowSums(sweep(c_prob, 2, log(contrib_area), "*"))
+    connectivity <- rowSums(sweep(c_prob, 2, log(patch_area), "*"))
 
   }
 
@@ -187,7 +177,7 @@ ifc <- function(alpha,
 
   if(model == 3){
 
-    connectivity <- log(focal_area) * rowSums(c_prob)
+    connectivity <- log(patch_area) * rowSums(c_prob)
 
   }
 
@@ -195,7 +185,7 @@ ifc <- function(alpha,
 
   if(model == 4){
 
-    connectivity <- rowSums(log(focal_area) * sweep(c_prob, 2, log(contrib_area), "*"))
+    connectivity <- rowSums(log(patch_area) * sweep(c_prob, 2, log(patch_area), "*"))
 
   }
 
