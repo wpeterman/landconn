@@ -1,3 +1,6 @@
+# landconn 0.1.3
+* Updated code and imports of necessary functions
+
 # landconn 0.1.2
 
 * Update `ifc` function: Simplified to only requiring one patch area vector; corrected error in connectivity matrix calculation

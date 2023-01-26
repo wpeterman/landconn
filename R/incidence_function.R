@@ -65,7 +65,7 @@
 #' (c1s <- ifc(alpha,
 #'             dist_mat,
 #'             model = 1,
-#'             scale = T))
+#'             scale = TRUE))
 #'
 #' ## Model 2
 #' (c2 <- ifc(alpha,

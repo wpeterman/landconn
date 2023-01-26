@@ -1,7 +1,7 @@
 Package: landconn
 Type: Package
 Title: Landscape Connectivity
-Version: 0.1.2
+Version: 0.1.3
 Author: Bill Peterman
 Maintainer: Bill Peterman <peterman.73@osu.edu>
 Description: This package contains functions for calculating metrics or executing tools to assess landscape connectivity
@@ -10,7 +10,17 @@ Encoding: UTF-8
 LazyData: true
 Depends:
   R (>= 4.0)
-RoxygenNote: 7.2.1
+RoxygenNote: 7.2.3
 Roxygen: list(markdown = TRUE)
 URL: https://github.com/wpeterman/landconn
 BugReports: https://github.com/wpeterman/landconn/issues
+Imports: 
+    magrittr, 
+    stats, 
+    raster, 
+    sp, 
+    terra, 
+    methods, 
+    fasterize, 
+    JuliaCall, 
+    sf 

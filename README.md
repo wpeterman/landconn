@@ -16,7 +16,7 @@ devtools::install_github('wpeterman/landconn')
 
 ## Example – Incidence function connectivity
 
-This is example is copied from the `ifc` example
+This example is copied from the `ifc` example
 ``` r
 library(landconn)
 

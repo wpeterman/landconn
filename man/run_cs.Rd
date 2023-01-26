@@ -16,10 +16,10 @@ full_mat = FALSE,
 output_dir = NULL,
 output_name = NULL,
 output = "raster",
-parallel = FALSE, 
+parallel = FALSE,
 cores = NULL,
 cholmod = TRUE,
-precision = FALSE, 
+precision = FALSE,
 is_resistance = TRUE,
 focal_node_current_zero = FALSE,
 max_map = FALSE,
@@ -89,7 +89,6 @@ There is extensive documentation for Circuitscape here: https://docs.circuitscap
 \examples{
 ## To do
 
- 
 ## Not run:
 ## *** TO BE COMPLETED *** ##
 
