@@ -1,3 +1,6 @@
+# landconn 0.1.4
+* Updated code and added conefor files
+
 # landconn 0.1.3
 * Updated code and imports of necessary functions
 

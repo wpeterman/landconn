@@ -37,28 +37,29 @@
 #' @examples
 #' ## To do
 #'
-#' @usage run_cs(JULIA_HOME = NULL,
-#' rast,
-#' input_locs = NULL,
-#' regions = NULL,
-#' field = NULL,
-#' CurrentMap = TRUE,
-#' cumulative_map_only = TRUE,
-#' VoltageMaps = FALSE,
-#' scenario = 'pairwise',
-#' Neighbor_Connect = 8,
-#' output_dir = NULL,
-#' output_name = NULL,
-#' output = "raster",
-#' parallel = FALSE,
-#' cores = NULL,
-#' cholmod = TRUE,
-#' precision = FALSE,
-#' is_resistance = TRUE,
-#' focal_node_current_zero = FALSE,
-#' max_map = FALSE,
-#' remove_files = TRUE,
-#' silent = TRUE)
+#' @usage
+#' run_cs(JULIA_HOME = NULL,
+#'        rast,
+#'        input_locs = NULL,
+#'        regions = NULL,
+#' 		    field = NULL,
+#' 		    CurrentMap = TRUE,
+#' 		    cumulative_map_only = TRUE,
+#' 		    VoltageMaps = FALSE,
+#' 		    scenario = 'pairwise',
+#' 		    Neighbor_Connect = 8,
+#' 		    output_dir = NULL,
+#' 		    output_name = NULL,
+#' 		    output = "raster",
+#' 		    parallel = FALSE,
+#' 		    cores = NULL,
+#' 		    cholmod = TRUE,
+#' 		    precision = FALSE,
+#' 		    is_resistance = TRUE,
+#' 		    focal_node_current_zero = FALSE,
+#' 		    max_map = FALSE,
+#' 		    remove_files = TRUE,
+#' 		    silent = TRUE)
 
 #' @export
 #' @author Bill Peterman <peterman.73@@osu.edu>
@@ -106,12 +107,11 @@ run_cs <- function(JULIA_HOME = NULL,
 
   wd <- getwd()
 
-  rast_class <- class(rast)
-  rast_crs <- try(crs(rast), silent = T)
-
   if(!exists('rast')){
     stop("\nMissing variable `rast`: Provide a raster surface!")
   }
+  rast_class <- class(rast)
+  rast_crs <- try(crs(rast), silent = T)
 
   if(is.null(JULIA_HOME)){
     stop('\n`JULIA_HOME` must be specified')
