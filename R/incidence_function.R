@@ -92,12 +92,13 @@
 #'             occ_sites = occ_sites,
 #'             patch_area = p_a))
 #'
-#' @usage ifc(alpha,
-#'            dist_mat,
-#'            model,
-#'            occ_sites = NULL,
-#'            patch_area = NULL,
-#'            scale = FALSE)
+#' @usage
+#' ifc(alpha,
+#'     dist_mat,
+#'     model,
+#'     occ_sites = NULL,
+#'     patch_area = NULL,
+#'     scale = FALSE)
 #'
 #' @export
 #' @author Bill Peterman <peterman.73@@osu.edu>
