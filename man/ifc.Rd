@@ -5,11 +5,11 @@
 \title{Calculate connectivity using incidence functions}
 \usage{
 ifc(alpha,
-           dist_mat,
-           model,
-           occ_sites = NULL,
-           patch_area = NULL,
-           scale = FALSE)
+    dist_mat,
+    model,
+    occ_sites = NULL,
+    patch_area = NULL,
+    scale = FALSE)
 }
 \arguments{
 \item{alpha}{The average dispersal distance of your organism. Should be in the same units as the distances in the \code{dist_mat}. See Details}

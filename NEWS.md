@@ -1,3 +1,9 @@
+# landconn 0.2.1
+* Removed reticulate and Unicor functions
+
+# landconn 0.2.0
+* Added JuliaConnectoR function
+
 # landconn 0.1.4
 * Updated code and added conefor files
 
