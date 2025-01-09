@@ -65,9 +65,9 @@
 #' @author Bill Peterman <peterman.73@@osu.edu>
 #'
 #' @importFrom stats dist
-#' @importFrom raster reclassify rasterToPoints writeRaster raster coordinates stack crs rasterize writeRaster
+#' @importFrom raster reclassify rasterToPoints writeRaster raster coordinates stack crs rasterize writeRaster plot
 #' @importFrom sp coordinates
-#' @importFrom terra geomtype rast isFALSE isTRUE crs rasterize writeRaster
+#' @importFrom terra geomtype rast isFALSE isTRUE crs rasterize writeRaster crop ext global extend vect plot
 #' @importFrom methods as
 #' @importFrom fasterize raster fasterize
 #' @importFrom JuliaCall julia_call julia_library julia_setup
@@ -150,7 +150,7 @@ run_cs <- function(JULIA_HOME = NULL,
       }
     } else {
       input_sp <- as(input_locs, 'Spatial')
-      input_locs_rast <- raster::rasterize(coordinates(input_locs),
+      input_locs_rast <- raster::rasterize(sf::st_coordinates(input_locs),
                                            rast)
     }
   }

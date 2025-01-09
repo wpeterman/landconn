@@ -23,7 +23,9 @@ julia_packages <- function(julia_path, install_libraries = TRUE) {
     Pkg <- JuliaConnectoR::juliaImport("Pkg")
     JuliaConnectoR::juliaEval("Pkg.add(\"ConScape\")")
     JuliaConnectoR::juliaEval("Pkg.add(\"SparseArrays\")")
+    JuliaConnectoR::juliaEval("Pkg.add(\"Plots\")")
     JuliaConnectoR::juliaEval("Pkg.add(\"Circuitscape\")")
+    # JuliaConnectoR::juliaEval("Pkg.add(\ name=\"Circuitscape\"\ ,version=\"5.13.3\")")
 
   }
   SA <- JuliaConnectoR::juliaImport("SparseArrays")

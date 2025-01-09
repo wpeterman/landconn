@@ -1,3 +1,6 @@
+# landconn 0.2.2
+* Added `omni_cs` function to calculated omnidirectional current flows across resistance surfaces.
+
 # landconn 0.2.1
 * Removed reticulate and Unicor functions
 
