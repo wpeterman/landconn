@@ -20,8 +20,10 @@
 #' @details There is extensive documentation for Circuitscape here: https://docs.circuitscape.org/Circuitscape.jl/latest/ . This function follows guidelines outlined by Koen et al. 2014 (https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/2041-210X.12197). Briefly, this function will extend a resistance surface and fill that spaces with random positive values. Then, points are distributed around this landscape and an 'all-to-one' Circuitscape analysis is run. Current surfaces are then trimmed to their original extent.
 #' @export
 #' @examples
+#' library(terra)
+#' library(landconn)
 #' f <- system.file("data/resist.tif", package = "landconn")
-#' r <- terra::rast(f)
+#' r <- rast(f)
 #' jl_home <- "C:/Users/peterman.73/AppData/Local/Programs/Julia-1.10.5/bin/"
 #' omni_r <- omni_cs(JULIA_HOME = jl_home,
 #'                   r,
