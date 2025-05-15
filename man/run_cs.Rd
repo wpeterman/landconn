@@ -4,33 +4,38 @@
 \alias{run_cs}
 \title{Run Julia version of CIRCUITSCAPE from R}
 \usage{
-run_cs(JULIA_HOME = NULL,
-       rast,
-       input_locs = NULL,
-       regions = NULL,
-		    field = NULL,
-		    CurrentMap = TRUE,
-		    cumulative_map_only = TRUE,
-		    VoltageMaps = FALSE,
-		    scenario = 'pairwise',
-		    Neighbor_Connect = 8,
-		    output_dir = NULL,
-		    output_name = NULL,
-		    output = "raster",
-		    parallel = FALSE,
-		    cores = NULL,
-		    cholmod = TRUE,
-		    precision = FALSE,
-		    is_resistance = TRUE,
-		    focal_node_current_zero = FALSE,
-		    max_map = FALSE,
-		    remove_files = TRUE,
-		    silent = TRUE)
+run_cs(
+  JULIA_HOME = NULL,
+  r,
+  input_locs = NULL,
+  regions = NULL,
+  field = NULL,
+  CurrentMap = TRUE,
+  cumulative_map_only = TRUE,
+  VoltageMaps = FALSE,
+  scenario = c("pairwise", "advanced", "one-to-all", "all-to-one"),
+  Neighbor_Connect = 8,
+  output_dir = NULL,
+  output_name = NULL,
+  output = "raster",
+  pairs_to_include = NULL,
+  variable_source = NULL,
+  variable_ground = NULL,
+  parallel = FALSE,
+  cores = NULL,
+  cholmod = TRUE,
+  precision = FALSE,
+  is_resistance = TRUE,
+  focal_node_current_zero = FALSE,
+  max_map = FALSE,
+  remove_files = TRUE,
+  silent = TRUE
+)
 }
 \arguments{
 \item{JULIA_HOME}{Path to the folder containing the Julia binary (See Details).}
 
-\item{rast}{Accepts a RasterLayer object or SpatRaster.}
+\item{r}{Accepts a RasterLayer object or SpatRaster.}
 
 \item{input_locs}{Provide a \code{\link[sp]{SpatialPoints}} object, \code{sf} point object, or \code{sf} polygon object.}
 
@@ -88,11 +93,29 @@ Execute julia CS from R
 There is extensive documentation for Circuitscape here: https://docs.circuitscape.org/Circuitscape.jl/latest/ . Not all features and functionality have been built into this R function.
 }
 \examples{
-## To do
-
 ## Not run:
-## *** TO BE COMPLETED *** ##
-
+library(terra)
+library(landconn)
+f <- system.file("data/resist.tif", package = "landconn")
+r <- rast(f)
+jl_home <- "C:/Users/peterman.73/AppData/Local/Programs/Julia-1.11.4/bin/"
+pts <- vect(rbind(c(250, 250),
+                 c(250, 1750),
+                 c(1750, 1750),
+                 c(1750, 250)))
+plot(r)
+plot(pts, pch = 19, cex = 3, add=T)
+cs_out <- run_cs(JULIA_HOME = jl_home,
+                r = r,
+                input_locs = pts,
+                output_dir = tempdir(),
+                output_name = 'test',
+                cholmod = TRUE,
+                precision = FALSE,
+                is_resistance = TRUE,
+                remove_files = TRUE,
+                silent = TRUE)
+plot(cs_out)
 ## End (Not run)
 }
 \author{

@@ -6,7 +6,7 @@
 #' Execute julia CS from R
 #'
 #' @param JULIA_HOME Path to the folder containing the Julia binary (See Details).
-#' @param rast Accepts a RasterLayer object or SpatRaster.
+#' @param r Accepts a RasterLayer object or SpatRaster.
 #' @param input_locs Provide a \code{\link[sp]{SpatialPoints}} object, \code{sf} point object, or \code{sf} polygon object.
 #' @param regions If providing a point file for `input_locs`, specify short-circuit regions that overlap the points. Provide as \code{sf} polygon object. If `regions` are provided, your location points will not be used directly, but a random point from within each region will be used. (Default = NULL)
 #' @param field (Default = NULL). Can be used to designate the identity of points or polygons when converting them to raster objects.If providing a polygon (SpatVector or sf POLYGON) this must be specified as the field name to get patch ID values from.
@@ -35,32 +35,31 @@
 #'
 #' @details There is extensive documentation for Circuitscape here: https://docs.circuitscape.org/Circuitscape.jl/latest/ . Not all features and functionality have been built into this R function.
 #' @examples
-#' ## To do
-#'
-#' @usage
-#' run_cs(JULIA_HOME = NULL,
-#'        rast,
-#'        input_locs = NULL,
-#'        regions = NULL,
-#' 		    field = NULL,
-#' 		    CurrentMap = TRUE,
-#' 		    cumulative_map_only = TRUE,
-#' 		    VoltageMaps = FALSE,
-#' 		    scenario = 'pairwise',
-#' 		    Neighbor_Connect = 8,
-#' 		    output_dir = NULL,
-#' 		    output_name = NULL,
-#' 		    output = "raster",
-#' 		    parallel = FALSE,
-#' 		    cores = NULL,
-#' 		    cholmod = TRUE,
-#' 		    precision = FALSE,
-#' 		    is_resistance = TRUE,
-#' 		    focal_node_current_zero = FALSE,
-#' 		    max_map = FALSE,
-#' 		    remove_files = TRUE,
-#' 		    silent = TRUE)
+#' ## Not run:
+#' library(terra)
+#' library(landconn)
+#' f <- system.file("data/resist.tif", package = "landconn")
+#' r <- rast(f)
+#' jl_home <- "C:/Users/peterman.73/AppData/Local/Programs/Julia-1.11.4/bin/"
+#'pts <- vect(rbind(c(250, 250),
+#'                  c(250, 1750),
+#'                  c(1750, 1750),
+#'                  c(1750, 250)))
+#'plot(r)
+#'plot(pts, pch = 19, cex = 3, add=T)
+#'cs_out <- run_cs(JULIA_HOME = jl_home,
+#'                 r = r,
+#'                 input_locs = pts,
+#'                 output_dir = tempdir(),
+#'                 output_name = 'test',
+#'                 cholmod = TRUE,
+#'                 precision = FALSE,
+#'                 is_resistance = TRUE,
+#'                 remove_files = TRUE,
+#'                 silent = TRUE)
+#'plot(cs_out)
 
+#' ## End (Not run)
 #' @export
 #' @author Bill Peterman <peterman.73@@osu.edu>
 #'
@@ -69,25 +68,19 @@
 #' @importFrom sp coordinates
 #' @importFrom terra geomtype rast isFALSE isTRUE crs rasterize writeRaster crop ext global extend vect plot
 #' @importFrom methods as
-#' @importFrom fasterize raster fasterize
-#' @importFrom JuliaCall julia_call julia_library julia_setup
+#' @importFrom JuliaConnectoR juliaCall juliaImport juliaEval juliaSetupOk
 #' @importFrom sf as_Spatial st_as_sf st_geometry_type st_sample
 #' @importFrom utils write.table
 #'
-#' @examples
-#' ## Not run:
-#' ## *** TO BE COMPLETED *** ##
-#'
-#' ## End (Not run)
 run_cs <- function(JULIA_HOME = NULL,
-                   rast,
+                   r,
                    input_locs = NULL,
                    regions = NULL,
                    field = NULL,
                    CurrentMap = TRUE,
                    cumulative_map_only = TRUE,
                    VoltageMaps = FALSE,
-                   scenario = 'pairwise',
+                   scenario = c('pairwise', 'advanced', 'one-to-all', 'all-to-one'),
                    Neighbor_Connect = 8,
                    output_dir = NULL,
                    output_name = NULL,
@@ -105,13 +98,18 @@ run_cs <- function(JULIA_HOME = NULL,
                    remove_files = TRUE,
                    silent = TRUE) {
 
-  wd <- getwd()
+  scenario <- match.arg(scenario)
 
-  if(!exists('rast')){
-    stop("\nMissing variable `rast`: Provide a raster surface!")
+  if(!exists('r')){
+    stop("\nMissing variable `r`: Provide a raster surface!")
   }
-  rast_class <- class(rast)
-  rast_crs <- try(crs(rast), silent = T)
+
+  if (inherits(r, "Raster")) {
+    r <- terra::rast(r)
+  }
+
+  rast_class <- class(r)
+  rast_crs <- try(crs(r), silent = T)
 
   if(is.null(JULIA_HOME)){
     stop('\n`JULIA_HOME` must be specified')
@@ -121,9 +119,6 @@ run_cs <- function(JULIA_HOME = NULL,
     stop("\n`input_locs` must be specified!")
   }
 
-  if(class(rast) == 'SpatRaster'){
-    rast <- raster::raster(rast)
-  }
   asc.dir <- NULL
 
   if(isTRUE(cholmod)){
@@ -137,29 +132,45 @@ run_cs <- function(JULIA_HOME = NULL,
     use_poly <- FALSE
     if(!is.null(field)){
       field_id <- input_locs[[field]]
-      input_locs_rast <- try(raster::rasterize(x = input_locs,
-                                               raster = rast,
-                                               field = field_id),
+      input_locs_rast <- try(terra::rasterize(x = input_locs,
+                                              r,
+                                              field = field_id),
                              silent = T)
       if(class(input_locs_rast) == 'try-error'){
         # cat('\nSpecified `field` does not exist!\nManually setting patch values...check results carefully!!!\n')
-
-        input_locs_rast <- raster::rasterize(coordinates(input_locs),
-                                             rast)
+        input_locs <- vect(input_locs)
+        input_locs$id <- 1:length(input_locs)
+        field_id <- 'id'
+        input_locs_rast <- terra::rasterize(input_locs,
+                                            r,
+                                            field = field_id)
 
       }
     } else {
-      input_sp <- as(input_locs, 'Spatial')
-      input_locs_rast <- raster::rasterize(sf::st_coordinates(input_locs),
-                                           rast)
+      # input_sp <- as(input_locs, 'Spatial')
+      input_locs <- vect(input_locs)
+      input_locs$id <- 1:length(input_locs)
+      field_id <- 'id'
+      input_locs_rast <- terra::rasterize(input_locs,
+                                          r,
+                                          field = field_id)
     }
   }
 
 
   if(any(class(input_locs) == 'SpatialPoints')){
     use_poly <- FALSE
-    input_locs_rast <- raster::rasterize(input_locs,
-                                         rast)
+    input_locs <- vect(input_locs)
+    input_locs$id <- 1:length(input_locs)
+    field_id <- 'id'
+    input_locs_rast <- terra::rasterize(input_locs,
+                                        r,
+                                        field = field_id)
+  }
+
+  if(any(class(input_locs) == 'MULTIPOINT') |
+     any(class(input_locs) == 'sfg')){
+    stop("input_locs should be a SpatialPoints, SpatVector, of sf object")
   }
 
   if(any(class(input_locs) == 'sf')){
@@ -167,9 +178,9 @@ run_cs <- function(JULIA_HOME = NULL,
        st_geometry_type(input_locs)[[1]] == 'MULTIPOLYGON'){
       use_poly <- TRUE
       if(!is.null(field)){
-        region_rast <- input_locs_rast <- try(fasterize::fasterize(input_locs,
-                                                                   raster = rast,
-                                                                   field = field),
+        region_rast <- input_locs_rast <- try(terra::rasterize(vect(input_locs),
+                                                               r,
+                                                               field = field),
                                               silent = T)
         if(class(input_locs_rast) == 'try-error'){
           cat('\nSpecified `field` does not exist!\nManually setting patch values...check results carefully!!!\n')
@@ -177,42 +188,50 @@ run_cs <- function(JULIA_HOME = NULL,
           input_locs$id <- 1:length(input_locs$geometry)
           field_id <- 'id'
 
-          region_rast <- input_locs_rast <- try(fasterize::fasterize(input_locs,
-                                                                     raster = rast,
-                                                                     field = field_id),
+          region_rast <- input_locs_rast <- try(terra::rasterize(vect(input_locs),
+                                                                 r,
+                                                                 field = field_id),
                                                 silent = T)
         }
       } else {
         cat('\nManually setting patch values...check results carefully!!!\n')
-
-        input_locs$id <- 1:length(input_locs$geometry)
+        input_locs <- vect(input_locs)
+        input_locs$id <- 1:length(input_locs)
         field_id <- 'id'
-        region_rast <- input_locs_rast <- try(fasterize::fasterize(input_locs,
-                                                                   raster = rast,
-                                                                   field = field_id))
+
+        region_rast <- input_locs_rast <- try(terra::rasterize(input_locs,
+                                                               r,
+                                                               field = field_id))
       }
     } else { ## sf Points
       use_poly <- FALSE
       if(!is.null(field)){
         field_id <- input_locs[[field]]
-        input_sp <- as_Spatial(input_locs)
-        input_sp <- as(input_sp, 'SpatialPoints')
+        # input_sp <- as_Spatial(input_locs)
+        # input_sp <- as(input_sp, 'SpatialPoints')
 
-        input_locs_rast <- try(raster::rasterize(input_sp,
-                                                 rast,
-                                                 field = field_id))
+        input_locs_rast <- try(terra::rasterize(vect(input_locs),
+                                                r,
+                                                field = field_id))
         if(class(input_locs_rast) == 'try-error'){
           cat('\nIssues with specified `field`!\nManually setting point values...check results carefully!!!\n')
 
-          input_locs_rast <- raster::rasterize(input_sp,
-                                               rast)
+          input_locs <- vect(input_locs)
+          input_locs$id <- 1:length(input_locs)
+          field_id <- 'id'
+
+          input_locs_rast <- terra::rasterize(input_locs,
+                                              r,
+                                              field = field_id)
         }
       } else {
-        input_sp <- as_Spatial(input_locs)
-        input_sp <- as(input_sp, 'SpatialPoints')
+        input_locs <- vect(input_locs)
+        input_locs$id <- 1:length(input_locs)
+        field_id <- 'id'
 
-        input_locs_rast <- raster::rasterize(input_sp,
-                                             rast)
+        input_locs_rast <- terra::rasterize(input_locs,
+                                            r,
+                                            field = field_id)
       }
     }
   } ## End sf statement
@@ -222,38 +241,39 @@ run_cs <- function(JULIA_HOME = NULL,
     if(terra::geomtype(input_locs) == 'polygons'){
       use_poly <- TRUE
       ## Convert to raster
-      input_sf <- sf::st_as_sf(input_locs)
+      # input_sf <- sf::st_as_sf(input_locs)
       if(!is.null(field)){
 
-        region_rast <- input_locs_rast <- try(fasterize::fasterize(input_sf,
-                                                                   raster = rast,
-                                                                   field = field),
+        region_rast <- input_locs_rast <- try(terra::rasterize(input_locs,
+                                                               r,
+                                                               field = field),
                                               silent = T)
 
         if(class(input_locs_rast) == 'try-error'){
           cat('\nSpecified `field` does not exist!\nManually setting patch values...check results carefully!!!')
 
-          input_sf$id <- 1:length(input_sf$geometry)
+          input_locs$id <- 1:length(input_locs)
           field_id <- 'id'
 
-          region_rast <- input_locs_rast <- try(fasterize::fasterize(input_sf,
-                                                                     raster = rast,
-                                                                     field = field_id))
+          region_rast <- input_locs_rast <- try(terra::rasterize(input_locs,
+                                                                 r,
+                                                                 field = field_id))
         }
       } else {
-        input_sf$id <- 1:length(input_sf$geometry)
+        input_locs$id <- 1:length(input_locs)
         field_id <- 'id'
 
-        region_rast <- input_locs_rast <- try(fasterize::fasterize(input_sf,
-                                                                   raster = rast,
-                                                                   field = field_id))
+        region_rast <- input_locs_rast <- try(terra::rasterize(input_locs,
+                                                               r,
+                                                               field = field_id))
       }
     } else {
       use_poly <- FALSE
-      input_sp <- as(input_locs, 'Spatial')
-      input_sp <- as(input_sp, 'SpatialPoints')
-      input_locs_rast <- raster::rasterize(input_sp,
-                                           rast)
+      input_locs$id <- 1:length(input_locs)
+      field_id <- 'id'
+      input_locs_rast <- terra::rasterize(input_locs,
+                                          r,
+                                          field = field_id)
     }
   }## End SpatVector
 
@@ -266,15 +286,16 @@ run_cs <- function(JULIA_HOME = NULL,
     }
     region_pts <- st_sample(regions, rep(1, length(regions$geometry)))
 
-    region_sp <- as_Spatial(region_pts)
-    region_sp <- as(region_sp, 'SpatialPoints')
-    input_locs_rast <- raster::rasterize(region_sp,
-                                         rast)
+    region_sp <- vect(region_pts)
+    # region_sp <- as(region_sp, 'SpatialPoints')
+    input_locs_rast <- terra::rasterize(region_sp,
+                                        r,
+                                        field = length(regions$geometry))
 
     if(!is.null(field)){
-      region_rast <- try(fasterize::fasterize(regions,
-                                              raster = rast,
-                                              field = field),
+      region_rast <- try(terra::rasterize(vect(regions),
+                                          r,
+                                          field = field),
                          silent = T)
       if(class(region_rast) == 'try-error'){
         cat('\nSpecified `field` does not exist!\nManually setting patch values...check results carefully!!!\n')
@@ -282,18 +303,18 @@ run_cs <- function(JULIA_HOME = NULL,
         regions$id <- 1:length(regions$geometry)
         field_id <- 'id'
 
-        region_rast <- try(fasterize::fasterize(regions,
-                                                raster = rast,
-                                                field = field_id),
+        region_rast <- try(terra::rasterize(vect(regions),
+                                            r,
+                                            field = field_id),
                            silent = T)
       }
     } else {
       regions$id <- 1:length(regions$geometry)
       field_id <- 'id'
 
-      region_rast <- try(fasterize::fasterize(regions,
-                                              raster = rast,
-                                              field = field_id),
+      region_rast <- try(terra::rasterize(vect(regions),
+                                          r,
+                                          field = field_id),
                          silent = T)
     }
   }
@@ -303,11 +324,10 @@ run_cs <- function(JULIA_HOME = NULL,
     stop('\nFailed to create input location raster!\n')
   }
 
-  if (class(rast)[1] == 'SpatRaster') {
-    rast <- raster(rast)
+  if(inherits(r, 'RasterLayer')) {
+    r <- rast(r)
     asc.dir <- NULL
   } else {
-    rast <- rast
     asc.dir <- NULL
   }
 
@@ -350,24 +370,27 @@ run_cs <- function(JULIA_HOME = NULL,
 
   # Write Rasters for CS ----------------------------------------------------
   ## Conductance / Resistance
-  writeRaster(
-    x = rast,
+  terra::writeRaster(
+    x = r,
     filename = temp_rast,
+    NAflag = -9999,
     overwrite = TRUE
   )
 
   ## Point raster
-  writeRaster(
+  terra::writeRaster(
     x = input_locs_rast,
     filename = temp_loc,
+    NAflag = -9999,
     overwrite = TRUE
   )
 
   ## Region raster
   if(isTRUE(use_poly)){
-    writeRaster(
+    terra::writeRaster(
       x = region_rast,
       filename = temp_poly,
+      NAflag = -9999,
       overwrite = TRUE
     )
   }
@@ -485,7 +508,7 @@ run_cs <- function(JULIA_HOME = NULL,
   }
 
   if (CurrentMap == FALSE) {
-    File.name <- names(rast)
+    File.name <- names(r)
     MAP = "write_cum_cur_map_only = False"
     CURRENT.MAP = "write_cur_maps = 0"
 
@@ -498,7 +521,7 @@ run_cs <- function(JULIA_HOME = NULL,
         File.name <- output_name
         tmp.name <- File.name
       } else {
-        File.name <- names(rast)
+        File.name <- names(r)
         tmp.name <- File.name
       }
     }
@@ -566,21 +589,24 @@ run_cs <- function(JULIA_HOME = NULL,
     is_resistance = is_resistance
   )
 
-
-  # rm(list = c('input_locs', 'input_locs_rast', 'rast'))
-
   # Run CIRCUITSCAPE.jl -----------------------------------------------------
 
   # out <- try(JuliaCall::julia_call('compute', normalizePath(
   #   paste0(output_dir, tmp.name, ".ini")
   # ))[-1,-1], silent = T)
+  if(!juliaSetupOk())
+    Sys.setenv(JULIA_BINDIR = JULIA_HOME)
+  if(!juliaSetupOk()){
+    stop("Check that the path to the Julia binary directory is correct")
+  }
 
-  JuliaCall::julia_setup(JULIA_HOME = JULIA_HOME)
-  try(JuliaCall::julia_library("Circuitscape"), silent = T)
+  try(juliaEval('using Circuitscape'), silent = T)
+  try(out <- juliaCall('compute', temp_ini), silent = T)
 
-  out <- try(JuliaCall::julia_call('compute', temp_ini)[-1,-1], silent = T)
-
-  if(any(class(out) == 'try-error')){
+  if(is.matrix(out)){
+    out <- out[-1,-1]
+  } else {
+  # if(any(class(out) == 'try-error')){
     cat(readChar(temp_ini, file.info(temp_ini)$size))
     cat("\n\n")
     if(isTRUE(remove_files)){
@@ -594,10 +620,6 @@ run_cs <- function(JULIA_HOME = NULL,
     }
 
     stop('\nCIRCUITSCAPE encountered an error!\nCheck inputs printed above carefully\n\n')
-  }
-
-  if(wd != getwd()) {
-    setwd(wd)
   }
 
   if (any(out[lower.tri(out)] == 0)) {
@@ -622,7 +644,7 @@ run_cs <- function(JULIA_HOME = NULL,
   # Return outputs -----------------------------------------------------------
 
   if (output == "raster") {
-    rast_cs <- try(raster(normalizePath(paste0(output_dir, '/', File.name, "_cum_curmap.asc"))),
+    rast_cs <- try(rast(normalizePath(paste0(output_dir, '/', File.name, "_cum_curmap.asc"))),
                    silent = T)
 
     names(rast_cs) <- File.name
@@ -640,9 +662,6 @@ run_cs <- function(JULIA_HOME = NULL,
       volt_names <- basename(unlist(volt_list))
       names(volt_stack) <- sub('.asc', "", volt_names)
 
-      # if(rast_class == 'SpatRaster'){
-      #   volt_stack <- suppressWarnings(terra::rast(volt_stack))
-      # }
       rast_cs <- stack(rast_cs, volt_stack)
     }
 
@@ -651,26 +670,15 @@ run_cs <- function(JULIA_HOME = NULL,
                              pattern = paste0(File.name, "_curmap_"),
                              all.files = T,
                              full.names = T)
-      cur_stack <- stack(sapply(cur_list, raster))
+      cur_stack <- rast(sapply(cur_list, rast))
       cur_names <- basename(unlist(cur_list))
       names(cur_stack) <- sub('.asc', "", cur_names)
 
-      rast_cs <- stack(rast_cs, cur_stack)
+      rast_cs <- c(rast_cs, cur_stack)
 
-      # if(rast_class == 'SpatRaster'){
-      #   cur_stack <- suppressWarnings(terra::rast(cur_stack))
-      # }
+
     }
-
-    if(rast_class == 'SpatRaster'){
-      rast_cs <- suppressWarnings(terra::rast(rast_cs))
-    }
-
     return(rast_cs)
   }
-
-
   return(out)
 } # End Julia function
-
-

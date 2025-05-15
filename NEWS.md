@@ -1,3 +1,6 @@
+# landconn 0.2.3
+* Updated functions to use `JuliaConnectoR`
+
 # landconn 0.2.2
 * Added `omni_cs` function to calculated omnidirectional current flows across resistance surfaces.
 

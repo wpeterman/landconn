@@ -4,16 +4,21 @@
 \alias{omni_cs}
 \title{Prepare data and run Julia}
 \usage{
-omni_cs(JULIA_HOME = NULL,
-        r,
-        n_nodes = 20,
-        output_dir = NULL,
-        output_name = NULL,
-        cholmod = TRUE,
-        precision = FALSE,
-        is_resistance = TRUE,
-        remove_files = TRUE,
-        silent = TRUE)
+omni_cs(
+  JULIA_HOME = NULL,
+  r,
+  n_nodes = 20,
+  output_dir = NULL,
+  output_name = NULL,
+  cholmod = TRUE,
+  precision = FALSE,
+  is_resistance = TRUE,
+  parallel = FALSE,
+  cores = NULL,
+  remove_files = TRUE,
+  silent = TRUE,
+  ...
+)
 }
 \arguments{
 \item{JULIA_HOME}{Path to the folder containing the Julia binary (See Details).}
@@ -32,9 +37,15 @@ omni_cs(JULIA_HOME = NULL,
 
 \item{is_resistance}{Default = TRUE. Is the landscape represented as a resistance (TRUE) or conductance (FALSE) surface?}
 
+\item{parallel}{(Logical; Default = FALSE) Do you want to run CIRCUITSCAPE in parallel? Only consider when dealing with rasters >2 million cells.}
+
+\item{cores}{If \code{parallel = TRUE}, how many cores should be used for parallel processing?}
+
 \item{remove_files}{Remove temporary files. Default is TRUE.}
 
 \item{silent}{Printing of output from Circuitscape will be suppressed unless an error occurs (Default = TRUE)}
+
+\item{...}{Not currently implemented}
 }
 \value{
 Function will return an omnidirectional current flow SpatRaster.
@@ -43,7 +54,7 @@ Function will return an omnidirectional current flow SpatRaster.
 Create an omnidirectional current flow map
 }
 \details{
-There is extensive documentation for Circuitscape here: https://docs.circuitscape.org/Circuitscape.jl/latest/ . This function follows guidelines outlined by Koen et al. 2014 (https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/2041-210X.12197). Briefly, this function will extend a resistance surface and fill that spaces with random positive values. Then, points are distributed around this landscape and an 'all-to-one' Circuitscape analysis is run. Current surfaces are then trimmed to their original extent.
+There is extensive documentation for Circuitscape here: https://docs.circuitscape.org/Circuitscape.jl/latest/ . This function follows guidelines outlined by Koen et al. 2014 (https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/2041-210X.12197). Briefly, this function will extend a resistance surface and fill that space with random positive values. Then, points are distributed around this landscape and an 'all-to-one' Circuitscape analysis is run. Current surfaces are then trimmed to their original extent.
 }
 \examples{
 library(terra)
@@ -62,5 +73,4 @@ omni_r <- omni_cs(JULIA_HOME = jl_home,
                   remove_files = TRUE,
                   silent = TRUE)
 plot(omni_r)
-
 }

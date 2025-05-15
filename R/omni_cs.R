@@ -12,12 +12,15 @@
 #' @param cholmod (Logical; Default = TRUE). Should the cholmod solver be used?
 #' @param precision (Logical; Default = FALSE). Should experimental single precision method be used? See details.
 #' @param is_resistance Default = TRUE. Is the landscape represented as a resistance (TRUE) or conductance (FALSE) surface?
+#' @param parallel (Logical; Default = FALSE) Do you want to run CIRCUITSCAPE in parallel? Only consider when dealing with rasters >2 million cells.
+#' @param cores If `parallel = TRUE`, how many cores should be used for parallel processing?
 #' @param remove_files Remove temporary files. Default is TRUE.
 #' @param silent Printing of output from Circuitscape will be suppressed unless an error occurs (Default = TRUE)
+#' @param ... Not currently implemented
 #'
 #' @return Function will return an omnidirectional current flow SpatRaster.
 #'
-#' @details There is extensive documentation for Circuitscape here: https://docs.circuitscape.org/Circuitscape.jl/latest/ . This function follows guidelines outlined by Koen et al. 2014 (https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/2041-210X.12197). Briefly, this function will extend a resistance surface and fill that spaces with random positive values. Then, points are distributed around this landscape and an 'all-to-one' Circuitscape analysis is run. Current surfaces are then trimmed to their original extent.
+#' @details There is extensive documentation for Circuitscape here: https://docs.circuitscape.org/Circuitscape.jl/latest/ . This function follows guidelines outlined by Koen et al. 2014 (https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/2041-210X.12197). Briefly, this function will extend a resistance surface and fill that space with random positive values. Then, points are distributed around this landscape and an 'all-to-one' Circuitscape analysis is run. Current surfaces are then trimmed to their original extent.
 #' @export
 #' @examples
 #' library(terra)
@@ -36,18 +39,6 @@
 #'                   remove_files = TRUE,
 #'                   silent = TRUE)
 #' plot(omni_r)
-#'
-#' @usage
-#' omni_cs(JULIA_HOME = NULL,
-#'         r,
-#'         n_nodes = 20,
-#'         output_dir = NULL,
-#'         output_name = NULL,
-#'         cholmod = TRUE,
-#'         precision = FALSE,
-#'         is_resistance = TRUE,
-#'         remove_files = TRUE,
-#'         silent = TRUE)
 
 omni_cs <- function(JULIA_HOME = NULL,
                     r,
@@ -57,8 +48,11 @@ omni_cs <- function(JULIA_HOME = NULL,
                     cholmod = TRUE,
                     precision = FALSE,
                     is_resistance = TRUE,
+                    parallel = FALSE,
+                    cores = NULL,
                     remove_files = TRUE,
-                    silent = TRUE) {
+                    silent = TRUE,
+                    ...) {
 
   if(class(r) == 'RasterLayer'){
     r <- terra::rast(r)
@@ -83,7 +77,7 @@ omni_cs <- function(JULIA_HOME = NULL,
   xy_sf <- sf::st_as_sf(pts)
 
   suppressMessages(omni_out <- run_cs(JULIA_HOME = JULIA_HOME,
-                                      rast = r_x,
+                                      r = r_x,
                                       input_locs = xy_sf,
                                       output_dir,
                                       output_name,
@@ -91,6 +85,8 @@ omni_cs <- function(JULIA_HOME = NULL,
                                       precision,
                                       is_resistance,
                                       remove_files,
+                                      parallel = parallel,
+                                      cores = cores,
                                       silent,
                                       regions = NULL,
                                       field = NULL,
@@ -103,8 +99,6 @@ omni_cs <- function(JULIA_HOME = NULL,
                                       pairs_to_include = NULL,
                                       variable_source = NULL,
                                       variable_ground = NULL,
-                                      parallel = FALSE,
-                                      cores = NULL,
                                       focal_node_current_zero = FALSE,
                                       max_map = FALSE))
 
