@@ -286,6 +286,33 @@ null <- glm(abundance ~ 1, data = opt_dat)        # no connectivity
 AIC(fits$best, null)                              # alpha is counted for the ifc fit
 ```
 
+## Other model classes
+
+The formula interface above fits a GLM. To use another model class, fit it once with a
+placeholder `connectivity` term and pass the fitted object; `ifc_optim()` refits it across
+`alpha`. This works for negative binomial models (`MASS::glm.nb`) and for `unmarked`
+occupancy and abundance models, where `connectivity` is a site covariate. The parameter
+counts in the information criteria include each model's own parameters (the negative
+binomial dispersion, the detection parameters of an occupancy model) plus `alpha`.
+
+```{r engines, eval = FALSE}
+## Negative binomial counts
+library(MASS)
+nb_dat <- data.frame(count = counts, connectivity = 0)   # placeholder term
+nb0 <- glm.nb(count ~ connectivity, data = nb_dat)
+ifc_optim(nb0, dist_mat = d, model = 1)
+
+## unmarked occupancy: connectivity goes in the siteCovs
+library(unmarked)
+siteCovs(umf)$connectivity <- 0                          # placeholder
+occ0 <- occu(~1 ~ connectivity, data = umf)
+ifc_optim(occ0, dist_mat = d, model = 1)
+```
+
+**How to read this:** the result is the same `ifc_optim` object as before, with `print()`,
+`summary()`, `plot()`, and the information criteria, so everything in this vignette applies
+unchanged. Keep the template simple: complex offsets or weights may not survive the refit.
+
 # Resistance-surface connectivity with Circuitscape
 
 The second approach models the whole landscape as a resistance surface, where every cell

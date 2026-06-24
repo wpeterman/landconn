@@ -22,17 +22,19 @@
 #' @importFrom stats AIC BIC logLik nobs
 #' @exportS3Method logLik ifc_optim
 logLik.ifc_optim <- function(object, ...) {
-  ll  <- stats::logLik(object$model)
-  val <- as.numeric(ll)
-  attr(val, "df")   <- attr(ll, "df") + 1L      # GLM parameters plus alpha
-  attr(val, "nobs") <- stats::nobs(object$model)
+  ## The degrees of freedom (model parameters plus alpha) and the number of sites are
+  ## stored at fit time by the engine adapter. This works for every engine, including
+  ## unmarked, whose own logLik() carries no df attribute.
+  val <- as.numeric(object$logLik)
+  attr(val, "df")   <- object$df
+  attr(val, "nobs") <- object$nobs
   class(val) <- "logLik"
   val
 }
 
 #' @rdname logLik.ifc_optim
 #' @exportS3Method nobs ifc_optim
-nobs.ifc_optim <- function(object, ...) stats::nobs(object$model)
+nobs.ifc_optim <- function(object, ...) object$nobs
 
 #' Information criteria for `ifc_optim` fits
 #'

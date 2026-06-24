@@ -59,7 +59,7 @@ test_that("ifc_optim validates its inputs", {
   expect_error(ifc_optim(abundance ~ habitat, data = s$dat, dist_mat = s$d),
                "connectivity")
   expect_error(ifc_optim(abundance ~ connectivity, data = s$dat[1:5, , drop = FALSE],
-                         dist_mat = s$d), "same number of rows")
+                         dist_mat = s$d), "same number of sites")
   expect_error(ifc_optim(abundance ~ connectivity, data = s$dat, dist_mat = s$d,
                          alpha_range = c(5, 1)), "increasing")
 })
@@ -69,6 +69,6 @@ test_that("ifc_optim methods run without error", {
   fit <- ifc_optim(abundance ~ connectivity, data = s$dat, dist_mat = s$d,
                    model = 1, family = gaussian)
   expect_output(print(fit), "alpha")
-  expect_output(summary(fit), "GLM")
+  expect_output(summary(fit), "Fitted model")
   expect_invisible(plot(fit))
 })

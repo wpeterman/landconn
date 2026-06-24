@@ -1,3 +1,8 @@
+# landconn 0.6.0
+* `ifc_optim()` is now a generic that works with model classes beyond `glm`. Besides the `formula` + `data` method, you can pass a fitted model that already contains a `connectivity` term and have it refit across `alpha`: a `glm`, a negative binomial model (`MASS::glm.nb`), or any `unmarked` model (with `connectivity` in the `siteCovs`).
+* The information criteria count each engine's parameters correctly (for example the negative binomial theta, or the detection parameters of an occupancy model) plus the optimized `alpha`.
+* Added `MASS` and `unmarked` to Suggests; they are only needed when you use those engines.
+
 # landconn 0.5.0
 * `ifc_optim()` can now compare several `ifc()` models at once: pass a vector to `model` (for example `1:4`), or both area transforms, and it fits the best `alpha` for each and returns an `ifc_optim_set` with a ranked model selection table.
 * Added `ifc_modsel()` to build a model selection table (AIC, AICc, BIC, delta, Akaike weights) from `ifc_optim` fits, with `K` counting the GLM parameters plus the optimized `alpha`.

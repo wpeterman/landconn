@@ -42,7 +42,7 @@ NULL
 print.ifc_optim <- function(x, ...) {
   cat("Incidence scale (alpha) optimization (`ifc_optim`)\n")
   cat("  ifc model:   ", x$ifc$model,
-      " | family: ", x$family, "\n", sep = "")
+      " | engine: ", x$engine, "\n", sep = "")
   cat("  alpha:       ", signif(x$alpha, 4), "\n", sep = "")
   cat("  ", round(100 * x$conf_level), "% profile CI: ",
       signif(x$alpha_ci[1], 4), " to ", signif(x$alpha_ci[2], 4), "\n", sep = "")
@@ -63,9 +63,12 @@ print.ifc_optim <- function(x, ...) {
 #' @exportS3Method summary ifc_optim
 summary.ifc_optim <- function(object, ...) {
   print(object)
-  cat("\nFitted GLM at the optimized alpha:\n")
-  print(stats::coef(summary(object$model)))
-  cat("\n(Standard errors above are conditional on the estimated alpha; see ?ifc_optim.)\n")
+  cat("\nFitted model at the optimized alpha:\n")
+  ## Prefer the compact coefficient table; fall back to the full summary for model
+  ## classes (such as unmarked) that do not return a coef() matrix from summary().
+  ct <- tryCatch(stats::coef(summary(object$model)), error = function(e) NULL)
+  if(!is.null(ct)) print(ct) else print(summary(object$model))
+  cat("\n(Estimates above are conditional on the optimized alpha; see ?ifc_optim.)\n")
   invisible(object)
 }
 
