@@ -12,7 +12,17 @@
 #' launched and the required libraries will be loaded without installing them.
 #' If `TRUE` (default), the libraries will be (re-)installed in Julia.
 #'
-#' @return NULL.
+#' @return Called for its side effect of starting Julia and loading (optionally
+#'   installing) the `ConScape`, `SparseArrays`, `Plots`, and `Circuitscape`
+#'   libraries. Returns `NULL` invisibly.
+#'
+#' @examples
+#' \dontrun{
+#' ## Point to the Julia 'bin' folder on your own machine.
+#' ## Use install_libraries = TRUE the first time, FALSE thereafter.
+#' julia_packages(julia_path = "C:/Programs/Julia-1.9.3/bin",
+#'                install_libraries = TRUE)
+#' }
 #' @export
 #'
 julia_packages <- function(julia_path, install_libraries = TRUE) {
@@ -31,5 +41,6 @@ julia_packages <- function(julia_path, install_libraries = TRUE) {
   SA <- JuliaConnectoR::juliaImport("SparseArrays")
   CS <- JuliaConnectoR::juliaImport("ConScape")
   CIRC <- JuliaConnectoR::juliaImport("Circuitscape")
+  invisible(NULL)
 }
 #' @importFrom JuliaConnectoR juliaImport juliaEval juliaImport

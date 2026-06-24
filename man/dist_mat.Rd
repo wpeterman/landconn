@@ -7,13 +7,19 @@
 dist_mat(coords)
 }
 \arguments{
-\item{coords}{Provide a two-column array, matrix, or data.frame with xy coordinates of locations.}
+\item{coords}{Provide a two-column array, matrix, or data.frame with xy coordinates of locations. The first column is x (easting/longitude) and the second is y (northing/latitude), in whatever distance units you want the output to be in.}
 }
 \value{
-A square distance matrix
+An object of class \code{land_dist}: a square symmetric matrix whose entry
+[i, j] is the distance between site i and site j, with zeros on the diagonal.
+The matrix is in the same units as \code{coords}. It also carries the \code{"matrix"} class,
+so it behaves like an ordinary matrix and can be passed straight to \code{\link[=ifc]{ifc()}} or
+\code{\link[=lower]{lower()}}. See \code{\link[=print.land_dist]{print.land_dist()}}, \code{\link[=summary.land_dist]{summary.land_dist()}}, and \code{\link[=plot.land_dist]{plot.land_dist()}}
+for the methods that summarize and display it.
 }
 \description{
-Calculate pairwise distance matrix
+Build a square matrix of straight-line (Euclidean) distances between a set of
+locations, ready to pass to \code{\link[=ifc]{ifc()}}.
 }
 \examples{
 set.seed(123)
@@ -25,6 +31,12 @@ loc <- data.frame(x = runif(10,0,10),
 ## Create distance matrix
 d_mat <- dist_mat(coords = loc)
 
+## Inspect it with the class methods
+summary(d_mat)
+
+}
+\seealso{
+\code{\link[=lower]{lower()}} to extract the lower triangle, \code{\link[=ifc]{ifc()}} to compute connectivity.
 }
 \author{
 Bill Peterman \href{mailto:peterman.73@osu.edu}{peterman.73@osu.edu}

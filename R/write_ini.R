@@ -1,10 +1,12 @@
 #' Write ini file
 #'
+#' Internal helper that writes a Circuitscape `.ini` configuration file. Called by
+#' [run_cs()]; not intended to be called directly.
+#'
 #' @name write_ini
 #' @rdname ini
 #' @keywords internal
-#' @export
-#' @return Writes ini file to directory
+#' @return Writes an `.ini` file to disk and returns `NULL` invisibly.
 NULL
 
 write_ini <- function(BATCH,
@@ -68,6 +70,8 @@ write_ini <- function(BATCH,
   }
 
   sink(BATCH)
+  ## Guarantee the sink is released even if writing errors partway through.
+  on.exit(if(sink.number() > 0) sink(), add = TRUE)
   cat("[Options for advanced mode]")
   cat("\n")
   cat("ground_file_is_resistances = True")

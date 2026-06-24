@@ -1,0 +1,298 @@
+---
+title: "Getting Started with landconn"
+author: "Bill Peterman"
+output:
+  rmarkdown::html_vignette:
+    number_sections: true
+    toc: true
+vignette: >
+  %\VignetteIndexEntry{Getting Started with landconn}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  fig.width  = 6,
+  fig.height = 4.25
+)
+```
+
+# Introduction
+
+This vignette walks through the two things `landconn` is built to do: measure
+connectivity among discrete habitat patches with an incidence function, and measure
+connectivity across a continuous resistance surface with Circuitscape. It is written for
+readers who are new to the package. You do not need prior connectivity modeling
+experience, but a basic familiarity with R and with spatial data helps.
+
+The incidence function workflow runs anywhere R does. The Circuitscape workflow needs a
+local Julia installation, so those sections are shown but not run here.
+
+```{r libraries}
+library(landconn)
+```
+
+# Patch connectivity with the incidence function
+
+The incidence function approach treats the landscape as a set of point locations (patches
+or sample sites) and asks, for each one, how well connected it is to all the others. Two
+ingredients drive the calculation: the pairwise distances between sites, and `alpha`, a
+parameter describing how far the organism typically disperses.
+
+## Build a distance matrix
+
+We start with some site coordinates. In practice these are your real sampling locations;
+here we simulate ten of them.
+
+```{r coords}
+set.seed(123)
+loc <- data.frame(x = runif(10, 0, 10),
+                  y = runif(10, 0, 10))
+
+d_mat <- dist_mat(loc)
+```
+
+`dist_mat()` returns a `land_dist` object, which is a square matrix of straight-line
+distances that also knows how to summarize and plot itself.
+
+```{r dist-summary}
+summary(d_mat)
+```
+
+**How to read the `summary()` output:** the values describe the spread of the unique
+pairwise distances between sites (the lower triangle of the matrix, so each pair is
+counted once). The minimum is the closest pair of sites and the maximum is the farthest.
+These distances are in the same units as your coordinates, so they set the scale on which
+`alpha` should be interpreted in the next step.
+
+```{r dist-plot, fig.alt = "Heatmap of pairwise distances between ten sites."}
+plot(d_mat)
+```
+
+**How to read this plot:** each cell is the distance between a pair of sites, with darker
+or lighter shading for shorter or longer distances depending on your color scale. The
+diagonal is zero (each site is zero distance from itself). Clusters of short distances
+point to groups of sites that sit close together on the landscape.
+
+## Choosing `alpha`
+
+`alpha` is the average dispersal distance of your organism, in the same units as the
+distances in `d_mat`. It enters a negative exponential that converts each pairwise
+distance into a probability of connection:
+
+$$ p_{ij} = \exp\!\left(-\frac{1}{\alpha}\, d_{ij}\right) $$
+
+A small `alpha` means connection probability falls off quickly with distance, so only
+near neighbors contribute. A large `alpha` means even distant sites stay connected. Set
+`alpha` from what you know about the species' movement, and remember that it is on the
+same distance scale as your coordinates.
+
+```{r alpha}
+alpha <- 3
+```
+
+## Calculate connectivity
+
+`ifc()` offers four models. All share the distance-decay core above; they differ in
+whether and how they weight by patch area.
+
+```{r models}
+## Model 1: distance only
+c1 <- ifc(alpha, d_mat, model = 1)
+
+## Model 1, scaled to a maximum of 1
+c1s <- ifc(alpha, d_mat, model = 1, scale = TRUE)
+```
+
+The four models encode different ecological hypotheses:
+
+| Model | Weighting | Hypothesis |
+|-------|-----------|------------|
+| 1 | Distance only | Connectivity declines as a site becomes more isolated |
+| 2 | Contributing patch area | Larger neighboring patches send more individuals |
+| 3 | Focal patch area | Larger focal patches attract more individuals |
+| 4 | Both | Larger patches both send and attract more individuals |
+
+Models 2 to 4 need a patch area for each site.
+
+```{r area-models}
+p_a <- runif(10, 5, 50)
+
+c2 <- ifc(alpha, d_mat, model = 2, patch_area = p_a)
+c3 <- ifc(alpha, d_mat, model = 3, patch_area = p_a)
+c4 <- ifc(alpha, d_mat, model = 4, patch_area = p_a)
+```
+
+You can restrict which sites contribute by passing `occ_sites`, a 0/1 vector marking
+occupied sites. Only occupied sites then contribute to the connectivity of others.
+
+```{r occupancy}
+occ_sites <- c(0, 0, 1, 1, 0, 1, 0, 0, 1, 1)
+c4b <- ifc(alpha, d_mat, model = 4, occ_sites = occ_sites, patch_area = p_a)
+```
+
+## Reading the connectivity output
+
+The object that comes back is an `ifc` object. Printing it shows the model context and
+the per-site values.
+
+```{r print-ifc}
+c4
+```
+
+```{r summary-ifc}
+summary(c4)
+```
+
+**How to read the `summary()` output:** the header restates the model, `alpha`, the area
+transform, and whether the values were scaled. The distribution block shows the spread of
+relative connectivity across sites. The most and least connected sites are listed by name
+(here, their row numbers), which is usually what you act on: the least connected sites are
+candidates for restoration or closer monitoring.
+
+Connectivity values are *relative*. They are meaningful in comparison with one another
+within a single call, not as absolute numbers. A site with twice the value of another is
+roughly twice as connected under that model. Because the models are on different scales
+(Model 4 multiplies by area twice, for example), do not compare raw values across models.
+To compare sites on a common 0 to 1 scale, use `scale = TRUE`, or compare the *rankings*
+rather than the magnitudes.
+
+```{r plot-ifc, fig.alt = "Barplot of relative connectivity by site, sorted from most to least connected."}
+plot(c4)
+```
+
+**How to read this plot:** each bar is one site's relative connectivity, sorted from most
+to least connected. The tallest bars are well-connected hubs; the shortest are the most
+isolated sites in the network.
+
+## Transforming patch area
+
+By default (`area_transform = "none"`) Models 2 to 4 use patch area directly, matching the
+standard incidence function equations. Setting `area_transform = "log"` substitutes the
+log of area, which dampens the pull of very large patches. Use `"log"` only when your
+areas are comfortably greater than 1, because the log of an area below 1 is negative.
+
+```{r transform}
+c2_none <- ifc(alpha, d_mat, model = 2, patch_area = p_a)
+c2_log  <- ifc(alpha, d_mat, model = 2, patch_area = p_a, area_transform = "log")
+
+## The two weightings rank sites differently
+cor(c2_none, c2_log, method = "spearman")
+```
+
+**How to read this:** a Spearman correlation well below 1 tells you the two area
+transforms reorder the sites, so the choice of transform is a modeling decision worth
+making deliberately rather than by default.
+
+# Resistance-surface connectivity with Circuitscape
+
+The second approach models the whole landscape as a resistance surface, where every cell
+carries a cost to movement, and uses Circuitscape to compute current flow across it.
+`landconn` drives Circuitscape from R through `JuliaConnectoR`.
+
+The package ships a small example resistance raster.
+
+```{r raster}
+f <- system.file("extdata/resist.tif", package = "landconn")
+r <- terra::rast(f)
+terra::plot(r)
+```
+
+**How to read this map:** cell values are resistance to movement, where higher values are
+harder to cross. Circuitscape treats low-resistance cells as easier paths, so current
+concentrates where movement is cheapest.
+
+## Running Circuitscape
+
+These calls require Julia and the Circuitscape library, so they are shown but not run. The
+first time, install the Julia libraries once with `julia_packages()`.
+
+```{r jl-setup, eval = FALSE}
+## Point to the Julia 'bin' folder on your machine; install libraries the first time only
+julia_packages(julia_path = "C:/Programs/Julia-1.10.5/bin", install_libraries = TRUE)
+```
+
+`run_cs()` runs a Circuitscape analysis between a set of locations and returns the
+cumulative current map as a `SpatRaster`.
+
+```{r run-cs, eval = FALSE}
+jl_home <- "C:/Programs/Julia-1.10.5/bin"
+
+pts <- terra::vect(rbind(c(250, 250),
+                         c(250, 1750),
+                         c(1750, 1750),
+                         c(1750, 250)))
+
+cs_out <- run_cs(JULIA_HOME = jl_home,
+                 r = r,
+                 input_locs = pts,
+                 output_dir = tempdir(),
+                 output_name = "demo",
+                 is_resistance = TRUE,
+                 silent = TRUE)
+terra::plot(cs_out)
+```
+
+**How to read the result:** the returned raster is a cumulative current map. Bright,
+high-current cells are pinch points where movement is funneled and where connectivity is
+most vulnerable to loss. Diffuse current indicates many redundant pathways.
+
+`omni_cs()` wraps the same machinery to produce an omnidirectional current map, following
+Koen et al. (2014). It surrounds the landscape with nodes and runs an all-to-one analysis,
+which highlights connectivity without assuming particular source and destination points.
+
+```{r omni-cs, eval = FALSE}
+omni_r <- omni_cs(JULIA_HOME = jl_home,
+                  r = r,
+                  n_nodes = 20,
+                  is_resistance = TRUE,
+                  silent = TRUE)
+terra::plot(omni_r)
+```
+
+# Quick reference
+
+The full incidence function workflow in one block:
+
+```{r quickref, eval = FALSE}
+library(landconn)
+
+## 1. Site coordinates -> distance matrix
+loc   <- data.frame(x = runif(10, 0, 10), y = runif(10, 0, 10))
+d_mat <- dist_mat(loc)                 # a `land_dist` object
+
+## 2. Set dispersal scale and (optionally) patch areas and occupancy
+alpha     <- 3                         # average dispersal distance, in coordinate units
+p_a       <- runif(10, 5, 50)          # patch areas
+occ_sites <- c(0,0,1,1,0,1,0,0,1,1)    # 0/1 occupancy
+
+## 3. Connectivity under the chosen model
+conn <- ifc(alpha, d_mat, model = 4,   # both contributing and focal area
+            patch_area = p_a,
+            occ_sites = occ_sites)
+
+## 4. Read the result
+conn                                   # per-site relative connectivity
+summary(conn)                          # distribution + most/least connected sites
+plot(conn)                             # sorted barplot
+```
+
+## Summary of key functions
+
+| Function | Purpose |
+|----------|---------|
+| `dist_mat()` | Build a pairwise distance matrix (`land_dist`) from coordinates |
+| `lower()` | Extract the lower triangle of a distance matrix as a vector |
+| `ifc()` | Incidence function connectivity, four models, returns an `ifc` object |
+| `run_cs()` | Run Circuitscape between locations across a resistance surface |
+| `omni_cs()` | Omnidirectional current map (Koen et al. 2014) |
+| `julia_packages()` | Start Julia and load the Circuitscape libraries |
+
+# References
+
+Koen, E. L., Bowman, J., Sadowski, C., and Walpole, A. A. (2014). Landscape connectivity
+for wildlife: development and validation of multispecies linkage maps. *Methods in
+Ecology and Evolution*, 5(7), 626-633. <doi:10.1111/2041-210X.12197>

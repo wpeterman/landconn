@@ -4,9 +4,10 @@
 \alias{write_ini}
 \title{Write ini file}
 \value{
-Writes ini file to directory
+Writes an \code{.ini} file to disk and returns \code{NULL} invisibly.
 }
 \description{
-Write ini file
+Internal helper that writes a Circuitscape \code{.ini} configuration file. Called by
+\code{\link[=run_cs]{run_cs()}}; not intended to be called directly.
 }
 \keyword{internal}

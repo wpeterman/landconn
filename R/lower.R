@@ -24,8 +24,8 @@
 
 lower <- function(dist_mat) {
 
-  if(dim(dist_mat)[1] != dim(dist_mat)[1]){
-    stop(cat("The number of rows does not equal the number of columns. \n`dist_mat` must be a square matrix"))
+  if(dim(dist_mat)[1] != dim(dist_mat)[2]){
+    stop("The number of rows does not equal the number of columns.\n`dist_mat` must be a square matrix")
   }
 
   d <- dist_mat[lower.tri(dist_mat)]

@@ -2,3 +2,6 @@
 .Rhistory
 .RData
 .Ruserdata
+
+# Test/build artifacts
+tests/testthat/Rplots.pdf

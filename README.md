@@ -14,63 +14,58 @@ You can install the development version of `landconn` like so:
 devtools::install_github('wpeterman/landconn')
 ```
 
-## Example – Incidence function connectivity
+## Example: incidence function connectivity
 
-This example is copied from the `ifc` example
 ``` r
 library(landconn)
 
 set.seed(123)
 ## Create random coordinates
-loc <- data.frame(x = runif(10,0,10),
-                  y = runif(10,0,10))
-## Create distance matrix
-dist_mat <- as.matrix(dist(loc))
+loc <- data.frame(x = runif(10, 0, 10),
+                  y = runif(10, 0, 10))
 
-## Set alpha and indicate occupied sites
+## Create a pairwise distance matrix (a `land_dist` object)
+d_mat <- dist_mat(loc)
+
+## Set alpha (average dispersal distance) and indicate occupied sites
 alpha <- 3
-occ_sites <- c(0,0,1,1,0,1,0,0,1,1)
+occ_sites <- c(0, 0, 1, 1, 0, 1, 0, 0, 1, 1)
 
-## Patch Areas
+## Patch areas
 p_a <- runif(10, 5, 50)
 
-## Calculate connectivity
-## Model 1
-(c1 <- ifc(alpha,
-           dist_mat,
-           model = 1))
-           
-## Model 1, scaled
-(c1s <- ifc(alpha,
-            dist_mat,
-            model = 1,
-            scale = T))
+## Model 1: distance only
+c1 <- ifc(alpha, d_mat, model = 1)
 
-## Model 2
-(c2 <- ifc(alpha,
-           dist_mat,
-           model = 2,
-           contrib_area = p_a))
+## Model 1, scaled to a maximum of 1
+c1s <- ifc(alpha, d_mat, model = 1, scale = TRUE)
 
-## Model 3
-(c3 <- ifc(alpha,
-           dist_mat,
-           model = 3,
-           focal_area = p_a))
+## Model 2: weight by contributing patch area
+c2 <- ifc(alpha, d_mat, model = 2, patch_area = p_a)
 
-## Model 4
-(c4 <- ifc(alpha,
-           dist_mat,
-           model = 4,
-           contrib_area = p_a,
-           focal_area = p_a))
+## Model 3: weight by focal patch area
+c3 <- ifc(alpha, d_mat, model = 3, patch_area = p_a)
 
-## Model 4, Occupied sites only
-(c4b <- ifc(alpha,
-            dist_mat,
-            model = 4,
-            occ_sites = occ_sites,
-            contrib_area = p_a,
-            focal_area = p_a))
+## Model 4: weight by both
+c4 <- ifc(alpha, d_mat, model = 4, patch_area = p_a)
+
+## Model 4, occupied sites only
+c4b <- ifc(alpha, d_mat, model = 4, occ_sites = occ_sites, patch_area = p_a)
+
+## The result is an `ifc` object with print, summary, and plot methods
+c4
+summary(c4)
+plot(c4)
 ```
+
+As of version 0.3.0, Models 2 to 4 use patch area directly (the standard incidence
+function formulation). To reproduce the earlier log-area behavior, pass
+`area_transform = "log"`.
+
+## Circuitscape
+
+`landconn` can also run [Circuitscape](https://docs.circuitscape.org/Circuitscape.jl/latest/)
+from R through `JuliaConnectoR` (functions `run_cs()` and `omni_cs()`). These require a
+local Julia installation and are demonstrated in
+`vignette("getting-started", package = "landconn")`.
 

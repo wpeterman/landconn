@@ -9,7 +9,8 @@ ifc(alpha,
     model,
     occ_sites = NULL,
     patch_area = NULL,
-    scale = FALSE)
+    scale = FALSE,
+    area_transform = c("none", "log"))
 }
 \arguments{
 \item{alpha}{The average dispersal distance of your organism. Should be in the same units as the distances in the \code{dist_mat}. See Details}
@@ -20,12 +21,21 @@ ifc(alpha,
 
 \item{occ_sites}{A 0/1 vector equal in length to the number of sites in the \code{dist_mat}. If provided, only sites indicated with a 1 will contribute to connectivity. If not provided, all sites contribute to connectivity.}
 
-\item{patch_area}{If provided, can be used calculate connectivity as a function of surrounding patched (Model 2), focal patches (Model 3), or both (Model 4). See details}
+\item{patch_area}{If provided, can be used to calculate connectivity as a function of the area of surrounding patches (Model 2), focal patches (Model 3), or both (Model 4). Provide a numeric vector equal in length to the number of sites in the \code{dist_mat}, in whatever area units are meaningful to you. See Details}
 
 \item{scale}{Logical (Default = FALSE). If TRUE, connectivity estimates will be scaled to have a maximum of 1.}
+
+\item{area_transform}{How patch area enters Models 2-4. \code{"none"} (Default) uses \code{patch_area} directly, matching the equations in Details. \code{"log"} uses \code{log(patch_area)} instead, which dampens the influence of very large patches. See Details}
 }
 \value{
-A vector of relative connectivity values for each site
+An object of class \code{ifc}: a named numeric vector of relative connectivity
+values, one per site, in the same order as the rows of \code{dist_mat}. Higher values
+indicate sites that are better connected to the rest of the network. The model
+number, \code{alpha}, \code{area_transform}, and whether the result was scaled are stored as
+attributes and shown by \code{print()} and \code{summary()}. Because the object is a numeric
+vector underneath, it can be used directly in arithmetic, correlation, or plotting.
+See \code{\link[=print.ifc]{print.ifc()}}, \code{\link[=summary.ifc]{summary.ifc()}}, and \code{\link[=plot.ifc]{plot.ifc()}} for the methods that help you
+read it.
 }
 \description{
 Calculate connectivity using incidence functions
@@ -55,6 +65,8 @@ Hypothesis: Larger patches contribute more individuals and larger patches have g
 \deqn{C_i = A_i\sum_{j \ne i }p_j \text{exp} (-\alpha d_{ij})A_j}
 
 \eqn{p_j} (\code{occ_sites}) is the occupancy of site j and modifies which patches contribute to the connectivity of a patch
+
+In the equations above, \eqn{A_j} and \eqn{A_i} are patch areas entered directly, which is the default (\code{area_transform = "none"}). Setting \code{area_transform = "log"} substitutes \eqn{\log(A_j)} and \eqn{\log(A_i)} in Models 2-4. Note that \code{log()} of an area less than 1 is negative, so use \code{"log"} only when your area values are comfortably greater than 1. Model 1 does not use patch area and is unaffected by this argument.
 }
 }
 \examples{
@@ -112,6 +124,21 @@ p_a <- runif(10, 5, 50)
             occ_sites = occ_sites,
             patch_area = p_a))
 
+## Model 2 with log-transformed area (pre-0.3.0 behavior)
+(c2log <- ifc(alpha,
+              dist_mat,
+              model = 2,
+              patch_area = p_a,
+              area_transform = "log"))
+
+## The result is an `ifc` object with print, summary, and plot methods
+summary(c4)
+plot(c4)
+
+}
+\seealso{
+\code{\link[=dist_mat]{dist_mat()}} to build the input distance matrix, \code{\link[=print.ifc]{print.ifc()}},
+\code{\link[=summary.ifc]{summary.ifc()}}, and \code{\link[=plot.ifc]{plot.ifc()}} for the methods.
 }
 \author{
 Bill Peterman \href{mailto:peterman.73@osu.edu}{peterman.73@osu.edu}

@@ -35,38 +35,40 @@
 #'
 #' @details There is extensive documentation for Circuitscape here: https://docs.circuitscape.org/Circuitscape.jl/latest/ . Not all features and functionality have been built into this R function.
 #' @examples
-#' ## Not run:
+#' \dontrun{
 #' library(terra)
 #' library(landconn)
-#' f <- system.file("data/resist.tif", package = "landconn")
+#' f <- system.file("extdata/resist.tif", package = "landconn")
 #' r <- rast(f)
-#' jl_home <- "C:/Users/peterman.73/AppData/Local/Programs/Julia-1.11.4/bin/"
-#'pts <- vect(rbind(c(250, 250),
-#'                  c(250, 1750),
-#'                  c(1750, 1750),
-#'                  c(1750, 250)))
-#'plot(r)
-#'plot(pts, pch = 19, cex = 3, add=T)
-#'cs_out <- run_cs(JULIA_HOME = jl_home,
-#'                 r = r,
-#'                 input_locs = pts,
-#'                 output_dir = tempdir(),
-#'                 output_name = 'test',
-#'                 cholmod = TRUE,
-#'                 precision = FALSE,
-#'                 is_resistance = TRUE,
-#'                 remove_files = TRUE,
-#'                 silent = TRUE)
-#'plot(cs_out)
-
-#' ## End (Not run)
+#'
+#' ## Set this to the Julia 'bin' folder on your own machine
+#' jl_home <- "C:/Users/<user>/AppData/Local/Programs/Julia-1.11.4/bin/"
+#'
+#' pts <- vect(rbind(c(250, 250),
+#'                   c(250, 1750),
+#'                   c(1750, 1750),
+#'                   c(1750, 250)))
+#' plot(r)
+#' plot(pts, pch = 19, cex = 3, add = TRUE)
+#' cs_out <- run_cs(JULIA_HOME = jl_home,
+#'                  r = r,
+#'                  input_locs = pts,
+#'                  output_dir = tempdir(),
+#'                  output_name = 'test',
+#'                  cholmod = TRUE,
+#'                  precision = FALSE,
+#'                  is_resistance = TRUE,
+#'                  remove_files = TRUE,
+#'                  silent = TRUE)
+#' plot(cs_out)
+#' }
 #' @export
 #' @author Bill Peterman <peterman.73@@osu.edu>
 #'
 #' @importFrom stats dist
-#' @importFrom raster reclassify rasterToPoints writeRaster raster coordinates stack crs rasterize writeRaster plot
+#' @importFrom raster reclassify rasterToPoints writeRaster raster coordinates stack crs rasterize
 #' @importFrom sp coordinates
-#' @importFrom terra geomtype rast isFALSE isTRUE crs rasterize writeRaster crop ext global extend vect plot
+#' @importFrom terra geomtype rast isFALSE isTRUE crs crs<- rasterize writeRaster crop ext global extend vect
 #' @importFrom methods as
 #' @importFrom JuliaConnectoR juliaCall juliaImport juliaEval juliaSetupOk
 #' @importFrom sf as_Spatial st_as_sf st_geometry_type st_sample
@@ -136,7 +138,7 @@ run_cs <- function(JULIA_HOME = NULL,
                                               r,
                                               field = field_id),
                              silent = T)
-      if(class(input_locs_rast) == 'try-error'){
+      if(inherits(input_locs_rast, 'try-error')){
         # cat('\nSpecified `field` does not exist!\nManually setting patch values...check results carefully!!!\n')
         input_locs <- vect(input_locs)
         input_locs$id <- 1:length(input_locs)
@@ -182,7 +184,7 @@ run_cs <- function(JULIA_HOME = NULL,
                                                                r,
                                                                field = field),
                                               silent = T)
-        if(class(input_locs_rast) == 'try-error'){
+        if(inherits(input_locs_rast, 'try-error')){
           cat('\nSpecified `field` does not exist!\nManually setting patch values...check results carefully!!!\n')
 
           input_locs$id <- 1:length(input_locs$geometry)
@@ -213,7 +215,7 @@ run_cs <- function(JULIA_HOME = NULL,
         input_locs_rast <- try(terra::rasterize(vect(input_locs),
                                                 r,
                                                 field = field_id))
-        if(class(input_locs_rast) == 'try-error'){
+        if(inherits(input_locs_rast, 'try-error')){
           cat('\nIssues with specified `field`!\nManually setting point values...check results carefully!!!\n')
 
           input_locs <- vect(input_locs)
@@ -249,7 +251,7 @@ run_cs <- function(JULIA_HOME = NULL,
                                                                field = field),
                                               silent = T)
 
-        if(class(input_locs_rast) == 'try-error'){
+        if(inherits(input_locs_rast, 'try-error')){
           cat('\nSpecified `field` does not exist!\nManually setting patch values...check results carefully!!!')
 
           input_locs$id <- 1:length(input_locs)
@@ -297,7 +299,7 @@ run_cs <- function(JULIA_HOME = NULL,
                                           r,
                                           field = field),
                          silent = T)
-      if(class(region_rast) == 'try-error'){
+      if(inherits(region_rast, 'try-error')){
         cat('\nSpecified `field` does not exist!\nManually setting patch values...check results carefully!!!\n')
 
         regions$id <- 1:length(regions$geometry)
@@ -320,7 +322,7 @@ run_cs <- function(JULIA_HOME = NULL,
   }
 
   loc_rast_made <- try(exists('input_locs_rast'), silent = T)
-  if(class(loc_rast_made) == 'try-error'){
+  if(inherits(loc_rast_made, 'try-error')){
     stop('\nFailed to create input location raster!\n')
   }
 
@@ -591,9 +593,6 @@ run_cs <- function(JULIA_HOME = NULL,
 
   # Run CIRCUITSCAPE.jl -----------------------------------------------------
 
-  # out <- try(JuliaCall::julia_call('compute', normalizePath(
-  #   paste0(output_dir, tmp.name, ".ini")
-  # ))[-1,-1], silent = T)
   if(!juliaSetupOk())
     Sys.setenv(JULIA_BINDIR = JULIA_HOME)
   if(!juliaSetupOk()){
@@ -649,7 +648,7 @@ run_cs <- function(JULIA_HOME = NULL,
 
     names(rast_cs) <- File.name
 
-    if(class(rast_crs) != 'character'){
+    if(!inherits(rast_crs, 'character')){
       crs(rast_cs) <- rast_crs
     }
 

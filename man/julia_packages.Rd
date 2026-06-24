@@ -15,7 +15,9 @@ launched and the required libraries will be loaded without installing them.
 If \code{TRUE} (default), the libraries will be (re-)installed in Julia.}
 }
 \value{
-NULL.
+Called for its side effect of starting Julia and loading (optionally
+installing) the \code{ConScape}, \code{SparseArrays}, \code{Plots}, and \code{Circuitscape}
+libraries. Returns \code{NULL} invisibly.
 }
 \description{
 This function starts a Julia session from R and imports the \code{ConScape} and \code{Circuitscape} library
@@ -23,4 +25,12 @@ to be used from R. It assumes that Julia is already installed in the system
 and the path to its executables is given as the \code{julia_path} argument.
 The first time the function is ran, it is best to set \code{install_libraries = TRUE}
 to install the libraries in Julia.
+}
+\examples{
+\dontrun{
+## Point to the Julia 'bin' folder on your own machine.
+## Use install_libraries = TRUE the first time, FALSE thereafter.
+julia_packages(julia_path = "C:/Programs/Julia-1.9.3/bin",
+               install_libraries = TRUE)
+}
 }

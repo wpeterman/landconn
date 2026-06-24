@@ -20,14 +20,21 @@
 #'
 #' @return Function will return an omnidirectional current flow SpatRaster.
 #'
+#' @importFrom stats rnorm
+#' @importFrom terra global ext vect crop extend rast
+#'
 #' @details There is extensive documentation for Circuitscape here: https://docs.circuitscape.org/Circuitscape.jl/latest/ . This function follows guidelines outlined by Koen et al. 2014 (https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/2041-210X.12197). Briefly, this function will extend a resistance surface and fill that space with random positive values. Then, points are distributed around this landscape and an 'all-to-one' Circuitscape analysis is run. Current surfaces are then trimmed to their original extent.
 #' @export
 #' @examples
+#' \dontrun{
 #' library(terra)
 #' library(landconn)
-#' f <- system.file("data/resist.tif", package = "landconn")
+#' f <- system.file("extdata/resist.tif", package = "landconn")
 #' r <- rast(f)
-#' jl_home <- "C:/Users/peterman.73/AppData/Local/Programs/Julia-1.10.5/bin/"
+#'
+#' ## Set this to the Julia 'bin' folder on your own machine
+#' jl_home <- "C:/Users/<user>/AppData/Local/Programs/Julia-1.10.5/bin/"
+#'
 #' omni_r <- omni_cs(JULIA_HOME = jl_home,
 #'                   r,
 #'                   n_nodes = 20,
@@ -39,6 +46,7 @@
 #'                   remove_files = TRUE,
 #'                   silent = TRUE)
 #' plot(omni_r)
+#' }
 
 omni_cs <- function(JULIA_HOME = NULL,
                     r,
@@ -54,7 +62,7 @@ omni_cs <- function(JULIA_HOME = NULL,
                     silent = TRUE,
                     ...) {
 
-  if(class(r) == 'RasterLayer'){
+  if(inherits(r, 'RasterLayer')){
     r <- terra::rast(r)
   }
 
@@ -64,7 +72,9 @@ omni_cs <- function(JULIA_HOME = NULL,
   d <- floor(d*0.25)
   r_x <- terra::extend(r, d, fill = NA)
   n_ <- global(is.na(r_x), fun='sum')[[1]]
-  r_x[is.na(r_x)] <- rnorm(n = n_, 5, 1)
+  ## Fill the extended buffer with random positive resistance values. abs() guards
+  ## against the rare negative draw from rnorm(), which would be an invalid resistance.
+  r_x[is.na(r_x)] <- abs(rnorm(n = n_, 5, 1))
 
   e <- ext(r_x) * 0.995
   x_ <- seq(e[1], e[2], length.out = ceiling(n_nodes / 4))

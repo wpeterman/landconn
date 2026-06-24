@@ -93,30 +93,33 @@ Execute julia CS from R
 There is extensive documentation for Circuitscape here: https://docs.circuitscape.org/Circuitscape.jl/latest/ . Not all features and functionality have been built into this R function.
 }
 \examples{
-## Not run:
+\dontrun{
 library(terra)
 library(landconn)
-f <- system.file("data/resist.tif", package = "landconn")
+f <- system.file("extdata/resist.tif", package = "landconn")
 r <- rast(f)
-jl_home <- "C:/Users/peterman.73/AppData/Local/Programs/Julia-1.11.4/bin/"
+
+## Set this to the Julia 'bin' folder on your own machine
+jl_home <- "C:/Users/<user>/AppData/Local/Programs/Julia-1.11.4/bin/"
+
 pts <- vect(rbind(c(250, 250),
-                 c(250, 1750),
-                 c(1750, 1750),
-                 c(1750, 250)))
+                  c(250, 1750),
+                  c(1750, 1750),
+                  c(1750, 250)))
 plot(r)
-plot(pts, pch = 19, cex = 3, add=T)
+plot(pts, pch = 19, cex = 3, add = TRUE)
 cs_out <- run_cs(JULIA_HOME = jl_home,
-                r = r,
-                input_locs = pts,
-                output_dir = tempdir(),
-                output_name = 'test',
-                cholmod = TRUE,
-                precision = FALSE,
-                is_resistance = TRUE,
-                remove_files = TRUE,
-                silent = TRUE)
+                 r = r,
+                 input_locs = pts,
+                 output_dir = tempdir(),
+                 output_name = 'test',
+                 cholmod = TRUE,
+                 precision = FALSE,
+                 is_resistance = TRUE,
+                 remove_files = TRUE,
+                 silent = TRUE)
 plot(cs_out)
-## End (Not run)
+}
 }
 \author{
 Bill Peterman \href{mailto:peterman.73@osu.edu}{peterman.73@osu.edu}
