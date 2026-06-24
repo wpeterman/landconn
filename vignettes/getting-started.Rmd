@@ -187,6 +187,105 @@ cor(c2_none, c2_log, method = "spearman")
 transforms reorder the sites, so the choice of transform is a modeling decision worth
 making deliberately rather than by default.
 
+## Estimating the dispersal scale (alpha)
+
+So far we set `alpha` by hand. Often you would rather let data tell you the scale. If you
+have a response measured at each site (occupancy, abundance, colonization), `ifc_optim()`
+finds the `alpha` whose connectivity best predicts that response in a generalized linear
+model. This is a *scale of effect* optimization: for each candidate `alpha` it recomputes
+connectivity, fits the model, and keeps the `alpha` that maximizes the fit.
+
+To see it work, we simulate site abundances that depend on connectivity at a known
+`alpha` of 4, then try to recover it. The predictor named `connectivity` in the formula
+is reserved: `ifc_optim()` generates it internally at each `alpha`.
+
+```{r optim-sim}
+set.seed(1)
+opt_loc <- data.frame(x = runif(120, 0, 20), y = runif(120, 0, 20))
+opt_d   <- dist_mat(opt_loc)
+
+## True connectivity at alpha = 4, plus a continuous response with modest noise
+true_conn <- as.numeric(ifc(4, opt_d, model = 1, scale = TRUE))
+opt_dat   <- data.frame(abundance = 2 + 8 * true_conn + rnorm(120, 0, 0.5))
+
+fit <- ifc_optim(abundance ~ connectivity, data = opt_dat,
+                 dist_mat = opt_d, model = 1, family = gaussian)
+fit
+```
+
+**How to read the output:** `alpha` is the estimated dispersal scale, in the distance
+units of your coordinates. It is the distance over which connection probability falls to
+about 37% (that is, `exp(-1)`) of its maximum. The profile confidence interval comes from
+the curvature of the log-likelihood around the estimate.
+
+```{r optim-plot, fig.alt = "Log-likelihood profile against alpha with the estimate and confidence interval marked."}
+plot(fit)
+```
+
+**How to read this plot:** the curve is the log-likelihood across candidate `alpha`
+values (note the log x axis). The solid red line is the estimate and the dotted red lines
+the confidence interval. A sharp peak, as here, means the data identify `alpha` well. A
+flat profile would warn you that the data carry little information about the scale, so the
+estimate should not be trusted. Binary occupancy responses, in particular, often give
+flat profiles; a continuous or count response is far more informative.
+
+For a confidence interval that does not rely on the shape of the profile, add a parametric
+bootstrap. It simulates new responses from the fitted model, holding the site network
+fixed, and re-optimizes `alpha` for each.
+
+```{r optim-boot, eval = FALSE}
+fit_b <- ifc_optim(abundance ~ connectivity, data = opt_dat,
+                   dist_mat = opt_d, model = 1, family = gaussian,
+                   n_boot = 200)
+fit_b$alpha_ci_boot
+```
+
+One caution: the model treats connectivity as a fixed predictor, so the standard errors
+that `summary(fit)` reports for the `connectivity` coefficient are conditional on the
+estimated `alpha` and are slightly optimistic. The interval on `alpha` itself comes from
+the profile or the bootstrap, not from those standard errors.
+
+## Comparing incidence models
+
+You usually do not know which of the four `ifc()` models, or which area transform, best
+describes your system. Pass a vector of models (and, if you like, both area transforms)
+and `ifc_optim()` fits the best `alpha` for each combination and ranks them in a model
+selection table.
+
+```{r modsel}
+opt_pa <- runif(120, 5, 50)
+fits <- ifc_optim(abundance ~ connectivity, data = opt_dat, dist_mat = opt_d,
+                  model = 1:4, patch_area = opt_pa,
+                  area_transform = c("none", "log"), family = gaussian)
+fits
+```
+
+**How to read the table:** each row is one model with its own optimized `alpha`. `K` is
+the number of parameters, counted correctly: the GLM coefficients, the dispersion
+parameter (gaussian estimates one), and the optimized `alpha`. Ranking is by AICc, with
+`delta` the distance from the best model and `weight` the Akaike weight (the models'
+weights sum to 1 and express relative support). Models within about 2 `delta` units of
+the best have comparable support. Because every model here estimates `alpha`, the AICc
+already accounts for that flexibility, so the comparison is fair.
+
+```{r modsel-plot, fig.alt = "Log-likelihood profiles for each ifc model overlaid on one axis."}
+plot(fits)
+```
+
+**How to read this plot:** each curve is one model's `alpha` profile. The model whose peak
+sits highest, after the AICc penalty for parameters, is the best supported. Drill into it
+with `fits$best`, which is an ordinary fit with its own `summary()` and `plot()`.
+
+The information criteria are also available directly. Because the `K` for an `ifc_optim`
+fit counts `alpha`, you can compare a connectivity model against a null model with no
+connectivity term in one call:
+
+```{r ic, eval = FALSE}
+AICc(fits$best)                                   # AICc of the best model
+null <- glm(abundance ~ 1, data = opt_dat)        # no connectivity
+AIC(fits$best, null)                              # alpha is counted for the ifc fit
+```
+
 # Resistance-surface connectivity with Circuitscape
 
 The second approach models the whole landscape as a resistance surface, where every cell
@@ -287,6 +386,8 @@ plot(conn)                             # sorted barplot
 | `dist_mat()` | Build a pairwise distance matrix (`land_dist`) from coordinates |
 | `lower()` | Extract the lower triangle of a distance matrix as a vector |
 | `ifc()` | Incidence function connectivity, four models, returns an `ifc` object |
+| `ifc_optim()` | Estimate the incidence scale `alpha` by optimizing GLM fit; compare models |
+| `ifc_modsel()` | Rank `ifc_optim` fits by AIC, AICc, or BIC, counting `alpha` |
 | `run_cs()` | Run Circuitscape between locations across a resistance surface |
 | `omni_cs()` | Omnidirectional current map (Koen et al. 2014) |
 | `julia_packages()` | Start Julia and load the Circuitscape libraries |

@@ -1,3 +1,11 @@
+# landconn 0.5.0
+* `ifc_optim()` can now compare several `ifc()` models at once: pass a vector to `model` (for example `1:4`), or both area transforms, and it fits the best `alpha` for each and returns an `ifc_optim_set` with a ranked model selection table.
+* Added `ifc_modsel()` to build a model selection table (AIC, AICc, BIC, delta, Akaike weights) from `ifc_optim` fits, with `K` counting the GLM parameters plus the optimized `alpha`.
+* Added information criteria methods for `ifc_optim`: `logLik()`, `nobs()`, `AIC()`, `BIC()`, and a new generic `AICc()` (with a default method usable on `glm`/`lm`). All count the `alpha` parameter, so an `ifc_optim` fit compares correctly against an ordinary `glm`.
+
+# landconn 0.4.0
+* Added `ifc_optim()` to estimate the incidence scale parameter `alpha` by optimizing the fit of a GLM whose predictor is the connectivity from `ifc()`. Reports a profile likelihood confidence interval and an optional parametric bootstrap interval, and returns an `ifc_optim` object with `print()`, `summary()`, and `plot()` (the alpha profile) methods.
+
 # landconn 0.3.0
 * `ifc()` now returns an `ifc` object with `print()`, `summary()`, and `plot()` methods.
 * `dist_mat()` now returns a `land_dist` object with `print()`, `summary()`, and `plot()` methods. It still behaves as an ordinary matrix.

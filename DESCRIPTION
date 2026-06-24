@@ -1,7 +1,7 @@
 Package: landconn
 Type: Package
 Title: Landscape Connectivity
-Version: 0.3.0
+Version: 0.5.0
 Authors@R:
     person("Bill", "Peterman", email = "peterman.73@osu.edu",
            role = c("aut", "cre"))

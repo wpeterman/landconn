@@ -11,6 +11,8 @@
 #'   \item{[ifc()]}{Calculate incidence function connectivity from a distance matrix,
 #'     with four model formulations. Returns an `ifc` object with `print`, `summary`,
 #'     and `plot` methods.}
+#'   \item{[ifc_optim()]}{Estimate the incidence scale parameter `alpha` by optimizing
+#'     the fit of a GLM whose predictor is the connectivity from [ifc()].}
 #'   \item{[lower()]}{Extract the lower triangle of a distance matrix as a vector.}
 #'   \item{[run_cs()]}{Run 'Circuitscape' from R (via 'JuliaConnectoR') to produce
 #'     current maps or resistance distances across a resistance surface.}
