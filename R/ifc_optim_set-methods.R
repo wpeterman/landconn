@@ -69,7 +69,7 @@ plot.ifc_optim_set <- function(x, ...) {
   cols <- seq_along(fits)
 
   plot(NA, xlim = xr, ylim = yr, log = "x",
-       xlab = "alpha (dispersal scale)", ylab = "log-likelihood",
+       xlab = "alpha (association scale)", ylab = "log-likelihood",
        main = "Incidence scale profiles by model", ...)
   for(i in seq_along(fits)){
     pr <- fits[[i]]$profile

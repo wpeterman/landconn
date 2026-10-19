@@ -1,72 +1,120 @@
-
-############ RUN JULIA ############
-
-#' Run Julia version of CIRCUITSCAPE from R
+#' Run Circuitscape from R
 #'
-#' Execute julia CS from R
+#' Prepare focal-node and habitat grids, run the Julia version of Circuitscape,
+#' and return resistance values, voltages, or current maps.
 #'
-#' @param JULIA_HOME Path to the folder containing the Julia binary (See Details).
-#' @param r Accepts a RasterLayer object or SpatRaster.
-#' @param input_locs Provide a \code{\link[sp]{SpatialPoints}} object, \code{sf} point object, or \code{sf} polygon object.
-#' @param regions If providing a point file for `input_locs`, specify short-circuit regions that overlap the points. Provide as \code{sf} polygon object. If `regions` are provided, your location points will not be used directly, but a random point from within each region will be used. (Default = NULL)
-#' @param field (Default = NULL). Can be used to designate the identity of points or polygons when converting them to raster objects.If providing a polygon (SpatVector or sf POLYGON) this must be specified as the field name to get patch ID values from.
-#' @param CurrentMap Logical. If TRUE, the cumulative current resistance map will be generated during the CS run (Default = TRUE)
-#' @param cumulative_map_only Only write individual pairwise current maps, or also write each pairwise current map? (Default = TRUE)
-#' @param VoltageMaps Logical. If TRUE, voltage maps will be produced.
-#' @param scenario Specify 'pairwise' (Default), 'one-to-all', 'all-to-one', or 'advanced'. See CIRCUITSCAPE guide for details on usage.
-#' @param Neighbor_Connect Specify 4 or 8 neighbor connection scheme (Default = 8)
-#' @param output_dir Directory where CS results will be written. Only specify if Circuitscape current map outputs are requested. It is critical that there are NO SPACES in the directory, as this may cause the function to fail.
-#' @param output_name Name to be applied to output files. Defaults to using the raster layer names.
-#' @param output Specify either "matrix" or "raster". "matrix" will return the pairwise resistance matrix, while "raster" (Default) will return a \code{spatRaster} or \code{RasterLayer} object of the cumulative current map. The raster map can only be returned if \code{CurrentMap=TRUE}
-#' @param pairs_to_include Default is NULL. If you wish to use the advanced CIRCUITSCAPE setting mode to include or exclude certain pairs of sample locations, provide a vector consisting of 1 (keep) or 0 (drop) for each pairwise observation (see example). This is an option if you do not want to assess all pairwise observations.
-#' @param variable_source When using 'one-to-all', 'all-to-one', or 'advanced' modes. Provide a two-column data frame or matrix with the first column being point/patch ID and the second column being the input source strength. Must be specified in conjunction with `variable_ground` in advanced mode. Can be specified by itself in 'one-to-all' and 'all-to-one'.
-#' @param variable_ground Required when using 'advanced' mode. Provide a two-column data frame or matrix with the first column being point/patch ID and the second column being in the input source strength. Must be specified in conjunction with `variable_source` in advanced mode.
-#' @param parallel (Logical; Default = FALSE) Do you want to run CIRCUITSCAPE in parallel? Only consider when dealing with rasters >2 million cells and if using Mac or Linux OS.
-#' @param cores If `parallel = TRUE`, how many cores should be used for parallel processing?
-#' @param cholmod (Logical; Default = TRUE). Should the cholmod solver be used?
-#' @param precision (Logical; Default = FALSE). Should experimental single precision method be used? See details.
-#' @param is_resistance Default = TRUE. Is the landscape represented as a resistance (TRUE) or conductance (FALSE) surface?
-#' @param focal_node_current_zero Set focal node current to 0 (Default = FALSE). May help with visualization of current flows in mapping.
-#' @param max_map Should maximum current map be created and saved (Default = FALSE)?
-#' @param remove_files Remove temporary files. Default is TRUE.
-#' @param silent Printing of output from Circuitscape will be suppressed unless an error occurs (Default = TRUE)
+#' @param JULIA_HOME Character path to the Julia binary directory. An already
+#'   running JuliaConnectoR session is reused; restart R to change Julia binaries.
+#' @param r A single-layer `SpatRaster` or `RasterLayer` with square cells.
+#'   Values must be finite and positive. Use `NA` for excluded habitat cells.
+#' @param input_locs Spatial points or polygons as a `SpatVector`, `sf`, or
+#'   supported `sp` object. Points must occupy distinct valid habitat cells.
+#'   Polygon cells with one ID form a core. May be `NULL` when `regions` is supplied.
+#' @param regions Optional polygons (`sf` or `SpatVector`) defining short-circuit
+#'   regions. When supplied, these replace `input_locs`: one valid raster cell is
+#'   sampled within each region ID for its focal node. Set a seed before calling
+#'   for reproducible sampling. Default is `NULL`.
+#' @param field Optional name of a numeric ID column. IDs must be positive integers
+#'   no greater than `2^53 - 1`. Without a field, IDs are the feature row numbers.
+#'   Supplied IDs are preserved. Invalid fields or missing cores produce an error.
+#' @param CurrentMap Logical, whether to write current maps (default `TRUE`).
+#'   Requesting `output = "raster"` enables this automatically.
+#' @param cumulative_map_only Logical, default `TRUE`: write the cumulative map
+#'   without individual pair maps. `FALSE` also reads individual current maps into
+#'   the returned raster. Advanced mode has a single current map.
+#' @param VoltageMaps Logical, write voltage maps and include them in raster
+#'   output (default `FALSE`).
+#' @param scenario One of `"pairwise"` (default), `"one-to-all"`, `"all-to-one"`,
+#'   or `"advanced"`. Return structures differ by scenario; see Value.
+#' @param Neighbor_Connect Either 8 (default, including diagonal neighbors) or 4
+#'   (cardinal neighbors only).
+#' @param output_dir Existing directory for solver results. Defaults to the R
+#'   session temporary directory. Result maps are retained there.
+#' @param output_name Single filename stem, without directory separators.
+#'   Defaults to the habitat layer name. Use a new stem to keep runs separate.
+#' @param output `"raster"` (default) for current/voltage maps, or `"matrix"`
+#'   for the scenario's numeric solver result.
+#' @param pairs_to_include Optional vector of 0/1 values for pairwise mode, one
+#'   per pair in the column-wise lower triangle of a matrix ordered by increasing
+#'   node ID. At least one pair must be retained. Other scenarios reject this option.
+#' @param variable_source Optional two-column numeric table: node ID, current
+#'   strength in amperes. Values must be nonnegative, with at least one positive
+#'   source. In one-to-all/all-to-one, unlisted IDs retain Circuitscape's default
+#'   unit strength. In advanced mode, only listed IDs inject current and a
+#'   `variable_ground` table is required. Not used in pairwise mode.
+#' @param variable_ground Advanced-mode two-column numeric table: node ID,
+#'   resistance to ground in the same resistance units as the modeled circuit.
+#'   Zero gives a direct ground. Source and ground IDs must be disjoint.
+#' @param parallel Logical, use Julia threads (default `FALSE`). Threads must be
+#'   configured before Julia starts; see Details.
+#' @param cores Optional positive integer thread count, used only with
+#'   `parallel = TRUE`. It sets `JULIA_NUM_THREADS` before a new Julia session and
+#'   must equal the thread count of an existing session. A mismatch is an error.
+#' @param cholmod Logical, use the direct CHOLMOD solver (`TRUE`, default) or
+#'   the iterative `cg+amg` solver (`FALSE`).
+#' @param precision Logical: `FALSE` (default) for double precision or `TRUE`
+#'   for single precision. The strings `"double"` and `"single"` are also accepted.
+#' @param is_resistance Logical, whether `r` represents resistance (`TRUE`,
+#'   default) or conductance (`FALSE`).
+#' @param focal_node_current_zero Logical, set active focal-node currents to
+#'   zero in maps (default `FALSE`); resistance values are unaffected.
+#' @param max_map Logical, also save the maximum current map (default `FALSE`).
+#'   This extra file is not included in the returned raster.
+#' @param remove_files Logical, remove temporary input grids/configuration on
+#'   success and failure (default `TRUE`). Solver output maps are retained.
+#' @param silent Logical, request suppressed solver messages (default `TRUE`).
+#'   Errors retain the original Julia condition text.
 #'
-#' @return Function will save all output files created by CIRCUITSCAPE. Can choose to have a Full square distance matrix or Raster objects of the current maps returned to R. Raster object will be SpatRaster or RasterLayer, depending upon input format.
+#' @return With `output = "matrix"`: pairwise mode returns a square resistance
+#'   matrix with row and column names equal to node IDs. One-to-all/all-to-one
+#'   return a two-column matrix (`node_id`, `resistance`), one row per focal ID.
+#'   Advanced mode returns the complete voltage matrix in raster row/column order,
+#'   without stripping any row or column. Missing/excluded cells follow the
+#'   solver's nodata convention.
 #'
-#' @details There is extensive documentation for Circuitscape here: https://docs.circuitscape.org/Circuitscape.jl/latest/ . Not all features and functionality have been built into this R function.
+#'   With `output = "raster"`: a `SpatRaster` for SpatRaster input, or a legacy
+#'   Raster object for RasterLayer input. The first layer is cumulative current
+#'   (the single current grid in advanced mode). Requested individual currents
+#'   follow, then voltages. Layers carry the habitat CRS and file-based names.
+#'   Current maps express modeled current under the specified sources and grounds;
+#'   they are not calibrated movement probabilities.
 #'
-#' Focal-node and short-circuit region grids use `-9999` for cells outside the
-#' supplied locations or regions. They are written in double precision so that
-#' the negative nodata value and integer node IDs are preserved, rather than
-#' converting empty cells to a positive unsigned value that could become an
-#' unintended focal node or short-circuit region.
+#' @details Focal and short-circuit grids use `-9999` nodata and double precision,
+#'   preserving IDs and preventing empty cells from becoming positive unsigned
+#'   values. The Julia ASCII reader is temporarily set to double precision to
+#'   prevent large IDs from being merged during import, then its prior setting
+#'   is restored. Every core must cover valid habitat. Coordinate systems must agree
+#'   when both inputs declare one; undeclared coordinates are assumed aligned.
+#'
+#'   In advanced mode, one source or ground is attached to the first represented
+#'   cell of each listed core. Polygon cells of that ID are already collapsed into
+#'   one circuit node, so the requested source is a total current per core, not
+#'   per cell. A point ID spanning several cells is ambiguous in advanced mode and
+#'   is rejected. Ground values are resistances, including when `r` is conductance.
+#'
+#'   For parallel work, start a fresh R session and set `cores`, or set
+#'   `JULIA_NUM_THREADS` before any Julia call. The actual thread count is checked;
+#'   it cannot be changed in a running Julia process. The R environment variables
+#'   are restored after the call, but the Julia process persists. Verified locally
+#'   with Julia 1.12.6 and Circuitscape 5.17.1. Compatibility with other versions
+#'   requires running the optional integration suite.
+#'
+#'   See `vignette("circuitscape-workflows", package = "landconn")` for polygon,
+#'   source/ground, output and parallel examples, and
+#'   <https://docs.circuitscape.org/Circuitscape.jl/latest/options/> for solver options.
+#' @seealso [omni_cs()], [julia_packages()]
 #' @examples
 #' \dontrun{
 #' library(terra)
-#' library(landconn)
-#' f <- system.file("extdata/resist.tif", package = "landconn")
-#' r <- rast(f)
-#'
-#' ## Set this to the Julia 'bin' folder on your own machine
-#' jl_home <- "C:/Users/<user>/AppData/Local/Programs/Julia-1.11.4/bin/"
-#'
-#' pts <- vect(rbind(c(250, 250),
-#'                   c(250, 1750),
-#'                   c(1750, 1750),
-#'                   c(1750, 250)))
-#' plot(r)
-#' plot(pts, pch = 19, cex = 3, add = TRUE)
-#' cs_out <- run_cs(JULIA_HOME = jl_home,
-#'                  r = r,
-#'                  input_locs = pts,
-#'                  output_dir = tempdir(),
-#'                  output_name = 'test',
-#'                  cholmod = TRUE,
-#'                  precision = FALSE,
-#'                  is_resistance = TRUE,
-#'                  remove_files = TRUE,
-#'                  silent = TRUE)
-#' plot(cs_out)
+#' r <- rast(nrows = 8, ncols = 8, xmin = 0, xmax = 8, ymin = 0, ymax = 8,
+#'           crs = "EPSG:3857")
+#' values(r) <- 1
+#' pts <- vect(cbind(c(1.5, 6.5), c(1.5, 6.5)), crs = crs(r))
+#' pts$core_id <- c(11L, 44L)
+#' cores <- buffer(pts, width = 0.6)
+#' distances <- run_cs(Sys.getenv("JULIA_BINDIR"), r, cores, field = "core_id",
+#'                     CurrentMap = FALSE, output = "matrix")
+#' distances # resistance matrix named by core ID
 #' }
 #' @export
 #' @author Bill Peterman <peterman.73@@osu.edu>
@@ -107,587 +155,156 @@ run_cs <- function(JULIA_HOME = NULL,
                    silent = TRUE) {
 
   scenario <- match.arg(scenario)
-
-  if(!exists('r')){
-    stop("\nMissing variable `r`: Provide a raster surface!")
+  output <- match.arg(output, c("raster", "matrix"))
+  input_raster <- inherits(r, "Raster")
+  if (input_raster) r <- terra::rast(r)
+  if (!inherits(r, "SpatRaster") || terra::nlyr(r) != 1L) {
+    stop("`r` must be a single-layer RasterLayer or SpatRaster.")
   }
-
-  if (inherits(r, "Raster")) {
-    r <- terra::rast(r)
+  rv <- terra::values(r, mat = FALSE)
+  if (!any(is.finite(rv)) || any(!is.na(rv) & (!is.finite(rv) | rv <= 0))) {
+    stop("Habitat values must be finite and positive, or NA for excluded cells.")
   }
-
-  rast_class <- class(r)
-  rast_crs <- try(crs(r), silent = T)
-
-  if(is.null(JULIA_HOME)){
-    stop('\n`JULIA_HOME` must be specified')
+  if (!isTRUE(all.equal(terra::res(r)[1], terra::res(r)[2]))) {
+    stop("Circuitscape ASCII grids require square raster cells.")
   }
-
-  if(is.null(input_locs)) {
-    stop("\n`input_locs` must be specified!")
+  if (is.null(JULIA_HOME) || !is.character(JULIA_HOME) || length(JULIA_HOME) != 1L) {
+    stop("`JULIA_HOME` must specify the Julia binary directory.")
   }
-
-  asc.dir <- NULL
-
-  if(isTRUE(cholmod)){
-    solver <- "cholmod"
-  } else {
-    solver <- NULL
+  if (is.null(input_locs) && is.null(regions)) stop("Supply `input_locs` or `regions`.")
+  for (nm in c("CurrentMap", "cumulative_map_only", "VoltageMaps", "parallel", "cholmod",
+               "is_resistance", "focal_node_current_zero", "max_map", "remove_files", "silent")) {
+    val <- get(nm)
+    if (!is.logical(val) || length(val) != 1L || is.na(val)) stop("`", nm, "` must be TRUE or FALSE.")
   }
-
-
-  if(any(class(input_locs) == 'SpatialPointsDataFrame')){
-    use_poly <- FALSE
-    if(!is.null(field)){
-      field_id <- input_locs[[field]]
-      input_locs_rast <- try(terra::rasterize(x = input_locs,
-                                              r,
-                                              field = field_id),
-                             silent = T)
-      if(inherits(input_locs_rast, 'try-error')){
-        # cat('\nSpecified `field` does not exist!\nManually setting patch values...check results carefully!!!\n')
-        input_locs <- vect(input_locs)
-        input_locs$id <- 1:length(input_locs)
-        field_id <- 'id'
-        input_locs_rast <- terra::rasterize(input_locs,
-                                            r,
-                                            field = field_id)
-
-      }
-    } else {
-      # input_sp <- as(input_locs, 'Spatial')
-      input_locs <- vect(input_locs)
-      input_locs$id <- 1:length(input_locs)
-      field_id <- 'id'
-      input_locs_rast <- terra::rasterize(input_locs,
-                                          r,
-                                          field = field_id)
+  if (length(Neighbor_Connect) != 1L || is.na(Neighbor_Connect) || !Neighbor_Connect %in% c(4, 8)) {
+    stop("`Neighbor_Connect` must be 4 or 8.")
+  }
+  precision <- if (identical(precision, TRUE)) "single" else if (identical(precision, FALSE)) "double" else
+    match.arg(precision, c("double", "single"))
+  prepared <- .cs_prepare(r, input_locs, regions, field)
+  ids <- prepared$ids
+  if (scenario != "advanced" && length(ids) < 2L) stop("At least two distinct focal IDs are required.")
+  if (!is.null(variable_ground) && scenario != "advanced") stop("`variable_ground` is only used in advanced mode.")
+  if (!is.null(variable_source) && scenario == "pairwise") stop("Variable source strengths are not used in pairwise mode.")
+  if (scenario == "advanced" && (is.null(variable_source) || is.null(variable_ground))) {
+    stop("Advanced mode requires both `variable_source` and `variable_ground`.")
+  }
+  if (!is.null(variable_source)) variable_source <- .cs_table(variable_source, ids, "variable_source")
+  if (!is.null(variable_ground)) variable_ground <- .cs_table(variable_ground, ids, "variable_ground", ground = TRUE)
+  if (scenario == "advanced" && any(variable_source[, 1] %in% variable_ground[, 1])) {
+    stop("Advanced sources and grounds must have disjoint IDs.")
+  }
+  if (!is.null(pairs_to_include)) {
+    if (scenario != "pairwise") stop("`pairs_to_include` is supported only in pairwise mode.")
+    if (!is.numeric(pairs_to_include) && !is.logical(pairs_to_include)) stop("`pairs_to_include` must contain 0 or 1.")
+    if (length(pairs_to_include) != choose(length(ids), 2) || anyNA(pairs_to_include) ||
+        any(!pairs_to_include %in% c(0, 1)) || !any(pairs_to_include == 1)) {
+      stop("`pairs_to_include` needs one 0/1 per lower-triangle pair, including at least one retained pair.")
     }
   }
+  if (is.null(output_dir)) output_dir <- tempdir()
+  if (!dir.exists(output_dir)) stop("`output_dir` must be an existing directory.")
+  output_dir <- normalizePath(output_dir, winslash = "/", mustWork = TRUE)
+  if (is.null(output_name)) output_name <- names(r)[1]
+  if (length(output_name) != 1L || is.na(output_name) || !nzchar(output_name) ||
+      grepl("[/\\\\\r\n]", output_name)) stop("`output_name` must be a single filename stem.")
+  if (output == "raster") CurrentMap <- TRUE
 
-
-  if(any(class(input_locs) == 'SpatialPoints')){
-    use_poly <- FALSE
-    input_locs <- vect(input_locs)
-    input_locs$id <- 1:length(input_locs)
-    field_id <- 'id'
-    input_locs_rast <- terra::rasterize(input_locs,
-                                        r,
-                                        field = field_id)
+  # Keep input cleanup separate from user-requested result maps. A failure at any
+  # later stage still releases all temporary input grids and their sidecars.
+  work <- tempfile("landconn_cs_")
+  dir.create(work)
+  if (remove_files) on.exit(unlink(work, recursive = TRUE), add = TRUE)
+  else message("Circuitscape input files retained in ", normalizePath(work, winslash = "/"))
+  files <- file.path(work, c("habitat.asc", "focal.asc", "regions.asc", "source.asc", "ground.asc", "strengths.txt", "pairs.txt", "run.ini"))
+  names(files) <- c("habitat", "focal", "regions", "source", "ground", "strengths", "pairs", "ini")
+  files <- chartr("\\", "/", files)
+  write_grid <- function(x, path) terra::writeRaster(x, path, datatype = "FLT8S", NAflag = -9999, overwrite = TRUE)
+  write_grid(r, files["habitat"])
+  write_grid(prepared$focal, files["focal"])
+  use_poly <- !is.null(prepared$regions)
+  if (use_poly) write_grid(prepared$regions, files["regions"])
+  source_line <- "source_file = None"
+  ground_line <- "ground_file = None"
+  strength_line <- "variable_source_file = None"
+  if (scenario == "advanced") {
+    write_grid(.cs_advanced_grid(variable_source, prepared$focal, prepared$regions), files["source"])
+    write_grid(.cs_advanced_grid(variable_ground, prepared$focal, prepared$regions), files["ground"])
+    source_line <- paste("source_file =", files["source"])
+    ground_line <- paste("ground_file =", files["ground"])
+  } else if (!is.null(variable_source)) {
+    utils::write.table(variable_source, files["strengths"], row.names = FALSE, col.names = FALSE, quote = FALSE)
+    strength_line <- paste("variable_source_file =", files["strengths"])
+  }
+  pair_line <- "included_pairs_file = None"
+  if (!is.null(pairs_to_include)) {
+    pair_indices <- which(lower.tri(matrix(0, length(ids), length(ids))), arr.ind = TRUE)
+    pairs <- cbind(ids[pair_indices[, 1]], ids[pair_indices[, 2]])
+    writeLines("mode include", files["pairs"])
+    utils::write.table(pairs[pairs_to_include == 1, , drop = FALSE], files["pairs"],
+                       append = TRUE, row.names = FALSE, col.names = FALSE, quote = FALSE)
+    pair_line <- paste("included_pairs_file =", files["pairs"])
   }
 
-  if(any(class(input_locs) == 'MULTIPOINT') |
-     any(class(input_locs) == 'sfg')){
-    stop("input_locs should be a SpatialPoints, SpatVector, of sf object")
-  }
-
-  if(any(class(input_locs) == 'sf')){
-    if(st_geometry_type(input_locs)[[1]] == 'POLYGON' |
-       st_geometry_type(input_locs)[[1]] == 'MULTIPOLYGON'){
-      use_poly <- TRUE
-      if(!is.null(field)){
-        region_rast <- input_locs_rast <- try(terra::rasterize(vect(input_locs),
-                                                               r,
-                                                               field = field),
-                                              silent = T)
-        if(inherits(input_locs_rast, 'try-error')){
-          cat('\nSpecified `field` does not exist!\nManually setting patch values...check results carefully!!!\n')
-
-          input_locs$id <- 1:length(input_locs$geometry)
-          field_id <- 'id'
-
-          region_rast <- input_locs_rast <- try(terra::rasterize(vect(input_locs),
-                                                                 r,
-                                                                 field = field_id),
-                                                silent = T)
-        }
-      } else {
-        cat('\nManually setting patch values...check results carefully!!!\n')
-        input_locs <- vect(input_locs)
-        input_locs$id <- 1:length(input_locs)
-        field_id <- 'id'
-
-        region_rast <- input_locs_rast <- try(terra::rasterize(input_locs,
-                                                               r,
-                                                               field = field_id))
-      }
-    } else { ## sf Points
-      use_poly <- FALSE
-      if(!is.null(field)){
-        field_id <- input_locs[[field]]
-        # input_sp <- as_Spatial(input_locs)
-        # input_sp <- as(input_sp, 'SpatialPoints')
-
-        input_locs_rast <- try(terra::rasterize(vect(input_locs),
-                                                r,
-                                                field = field_id))
-        if(inherits(input_locs_rast, 'try-error')){
-          cat('\nIssues with specified `field`!\nManually setting point values...check results carefully!!!\n')
-
-          input_locs <- vect(input_locs)
-          input_locs$id <- 1:length(input_locs)
-          field_id <- 'id'
-
-          input_locs_rast <- terra::rasterize(input_locs,
-                                              r,
-                                              field = field_id)
-        }
-      } else {
-        input_locs <- vect(input_locs)
-        input_locs$id <- 1:length(input_locs)
-        field_id <- 'id'
-
-        input_locs_rast <- terra::rasterize(input_locs,
-                                            r,
-                                            field = field_id)
-      }
+  # Julia threads are fixed when the Julia process starts. Set its startup
+  # environment before launching, and restore the R caller's environment afterward.
+  old_env <- Sys.getenv(c("JULIA_BINDIR", "JULIA_NUM_THREADS"), unset = NA_character_)
+  on.exit({
+    for (nm in names(old_env)) {
+      if (is.na(old_env[[nm]])) Sys.unsetenv(nm) else do.call(Sys.setenv, stats::setNames(list(old_env[[nm]]), nm))
     }
-  } ## End sf statement
-
-
-  if(any(class(input_locs) == 'SpatVector')){
-    if(terra::geomtype(input_locs) == 'polygons'){
-      use_poly <- TRUE
-      ## Convert to raster
-      # input_sf <- sf::st_as_sf(input_locs)
-      if(!is.null(field)){
-
-        region_rast <- input_locs_rast <- try(terra::rasterize(input_locs,
-                                                               r,
-                                                               field = field),
-                                              silent = T)
-
-        if(inherits(input_locs_rast, 'try-error')){
-          cat('\nSpecified `field` does not exist!\nManually setting patch values...check results carefully!!!')
-
-          input_locs$id <- 1:length(input_locs)
-          field_id <- 'id'
-
-          region_rast <- input_locs_rast <- try(terra::rasterize(input_locs,
-                                                                 r,
-                                                                 field = field_id))
-        }
-      } else {
-        input_locs$id <- 1:length(input_locs)
-        field_id <- 'id'
-
-        region_rast <- input_locs_rast <- try(terra::rasterize(input_locs,
-                                                               r,
-                                                               field = field_id))
-      }
-    } else {
-      use_poly <- FALSE
-      input_locs$id <- 1:length(input_locs)
-      field_id <- 'id'
-      input_locs_rast <- terra::rasterize(input_locs,
-                                          r,
-                                          field = field_id)
+  }, add = TRUE)
+  if (!is.null(cores)) {
+    if (!parallel) stop("Supply `cores` only with `parallel = TRUE`.")
+    if (!is.numeric(cores) || length(cores) != 1L || !is.finite(cores) || cores < 1 || cores != floor(cores)) {
+      stop("`cores` must be a positive integer.")
     }
-  }## End SpatVector
-
-  ## Polygon region
-  if(!is.null(regions)){
-    use_poly <- TRUE
-    # sf_class <- grep('sf', class(regions))
-    if(isFALSE('sf' %in% class(regions))){
-      stop('`regions` variable is defined but is not a simple features polygon of class `sf`. Try again!\n')
+    Sys.setenv(JULIA_NUM_THREADS = as.character(cores))
+  }
+  if (!juliaSetupOk()) Sys.setenv(JULIA_BINDIR = JULIA_HOME)
+  if (!juliaSetupOk()) stop("Check the Julia binary directory in `JULIA_HOME`.")
+  result <- tryCatch({
+    juliaEval("using Circuitscape")
+    if (parallel) {
+      threads <- as.integer(juliaEval("Threads.nthreads()"))
+      if (!is.null(cores) && threads != cores) stop("The running Julia session has ", threads,
+          " threads, not ", cores, ". Restart R and set JULIA_NUM_THREADS before starting Julia.")
+      if (threads < 2L) stop("Parallel execution requires Julia to start with at least two threads.")
     }
-    region_pts <- st_sample(regions, rep(1, length(regions$geometry)))
-
-    region_sp <- vect(region_pts)
-    # region_sp <- as(region_sp, 'SpatialPoints')
-    input_locs_rast <- terra::rasterize(region_sp,
-                                        r,
-                                        field = length(regions$geometry))
-
-    if(!is.null(field)){
-      region_rast <- try(terra::rasterize(vect(regions),
-                                          r,
-                                          field = field),
-                         silent = T)
-      if(inherits(region_rast, 'try-error')){
-        cat('\nSpecified `field` does not exist!\nManually setting patch values...check results carefully!!!\n')
-
-        regions$id <- 1:length(regions$geometry)
-        field_id <- 'id'
-
-        region_rast <- try(terra::rasterize(vect(regions),
-                                            r,
-                                            field = field_id),
-                           silent = T)
-      }
-    } else {
-      regions$id <- 1:length(regions$geometry)
-      field_id <- 'id'
-
-      region_rast <- try(terra::rasterize(vect(regions),
-                                          r,
-                                          field = field_id),
-                         silent = T)
-    }
-  }
-
-  loc_rast_made <- try(exists('input_locs_rast'), silent = T)
-  if(inherits(loc_rast_made, 'try-error')){
-    stop('\nFailed to create input location raster!\n')
-  }
-
-  if(inherits(r, 'RasterLayer')) {
-    r <- rast(r)
-    asc.dir <- NULL
-  } else {
-    asc.dir <- NULL
-  }
-
-
-  if(is.null(output_dir)) {
-    if(Sys.info()[['sysname']] == "Windows") {
-      output_dir <- paste0(tempdir(),"/")
-      output_dir <- normalizePath(output_dir, winslash = "/")
-      output_dir <- paste0(output_dir,'/')
-    } else {
-      output_dir <- paste0(normalizePath(tempdir()),"/")
-    }
-  } else {
-    output_dir <- paste0(normalizePath(output_dir),'/')
-
-  }
-
-  temp_rast <- rm.rast <- tempfile(pattern = "raster_",
-                                   tmpdir = tempdir(),
-                                   fileext = ".asc")
-
-  tmp.name <- basename(temp_rast) %>% strsplit(., '.asc') %>% unlist()
-
-  temp_loc <- rm.loc <- tempfile(pattern = "loc_",
-                                 tmpdir = tempdir(),
-                                 fileext = ".asc")
-
-  loc.name <- basename(temp_loc) %>% strsplit(., '.asc') %>% unlist()
-
-  temp_poly <- rm.poly <- tempfile(pattern = "poly_",
-                                   tmpdir = tempdir(),
-                                   fileext = ".asc")
-
-  poly.name <- basename(temp_poly) %>% strsplit(., '.asc') %>% unlist()
-
-  temp_ini <- rm.ini <- tempfile(pattern = "cs_run_",
-                                 tmpdir = tempdir(),
-                                 fileext = ".ini")
-
-
-  # Write Rasters for CS ----------------------------------------------------
-  ## Conductance / Resistance
-  terra::writeRaster(
-    x = r,
-    filename = temp_rast,
-    NAflag = -9999,
-    overwrite = TRUE
-  )
-
-  ## Double precision preserves IDs and negative nodata even when rasterize()
-  ## creates an unsigned integer grid. NAflag alone does not prevent overflow.
-  ## Point raster
-  terra::writeRaster(
-    x = input_locs_rast,
-    filename = temp_loc,
-    datatype = "FLT8S",
-    NAflag = -9999,
-    overwrite = TRUE
-  )
-
-  ## Region raster
-  if(isTRUE(use_poly)){
-    terra::writeRaster(
-      x = region_rast,
-      filename = temp_poly,
-      datatype = "FLT8S",
-      NAflag = -9999,
-      overwrite = TRUE
-    )
-  }
-
-
-  # Run Write ini -------------------------------------------------------------
-  if(output == "raster"){
-    if(isFALSE(CurrentMap)){
-      cat("\nRaster output requested; Setting `CurrentMap = TRUE`")
-      CurrentMap <- TRUE
-    }
-  }
-
-
-  if(!is.null(variable_source)){
-    if(isTRUE(use_poly)){
-      var_source_rast <- reclassify(input_locs_rast, as.matrix(variable_source))
-      var_source_df <- rasterToPoints(var_source_rast)
-      variable_source <- var_source_df[,c(3,1,2)]
-    }
-    if(is.null(variable_ground)){
-      VARSOURCE_T <- TRUE
-    }
-    if(is.null(variable_ground) & scenario == 'advanced'){
-      stop('Must also specify `variable_ground` file with advanced mode.')
-    }
-  } else {
-    VARSOURCE_T <- FALSE
-  }
-
-
-  if(isTRUE(focal_node_current_zero)){
-    FOCALNODE <- "set_focal_node_currents_to_zero = True"
-  } else {
-    FOCALNODE <- "set_focal_node_currents_to_zero = False"
-  }
-
-
-  if(isTRUE(max_map)){
-    MAXMAP <- "write_max_cur_maps = True"
-  } else {
-    MAXMAP <- "write_max_cur_maps = False"
-  }
-
-
-  if(is.null(variable_source)){
-    VARSOURCE <- 'use_variable_source_strengths = FALSE'
-    SOURCEFILE <- 'variable_source_file = (Browse for file)'
-    GRNDFILE <- 'ground_file = (Browse for file)'
-    VARSOURCEFILE <- 'variable_source_file = (Browse for file)'
-  }
-
-  if(isTRUE(VARSOURCE_T)){
-    temp_src <- rm.src <- tempfile(pattern = "source_",
-                                   tmpdir = tempdir(),
-                                   fileext = ".txt")
-
-    write.table(variable_source,
-                temp_src,
-                sep = '\t',
-                row.names = F, col.names = F)
-
-    VARSOURCE <- 'use_variable_source_strengths = True'
-    VARSOURCEFILE <- paste0('variable_source_file = ', temp_src)
-    GRNDFILE <- 'ground_file = (Browse for file)'
-    SOURCEFILE <- 'variable_source_file = (Browse for file)'
-
-  }
-
-  if(!is.null(variable_ground)){
-    if(ncol(variable_source != 2)){
-      stop('Must specify a two-column matrix or data frame for variable sources.')
-    }
-    temp_src <- rm.src <- tempfile(pattern = "source_",
-                                   tmpdir = tempdir(),
-                                   fileext = ".txt")
-
-    write.table(variable_source,
-                temp_src,
-                sep = '\t',
-                row.names = F, col.names = F)
-
-    SOURCEFILE <- paste0('variable_source_file = ', temp_src)
-
-    if(ncol(variable_ground != 2)){
-      stop('Must specify a two-column matrix or data frame for variable grounds.')
-    }
-    temp_grnd <- rm.grnd <- tempfile(pattern = "ground_",
-                                     tmpdir = tempdir(),
-                                     fileext = ".txt")
-
-    write.table(variable_ground,
-                temp_grnd,
-                sep = '\t',
-                row.names = F, col.names = F)
-
-    GRNDFILE <- paste0('variable_ground_file = ', temp_grnd)
-  }
-
-  if(scenario == 'pairwise'){
-    SCENARIO <- "scenario = pairwise"
-
-  } else if(scenario == 'one-to-all'){
-    SCENARIO <- "scenario = one-to-all"
-
-  } else if(scenario == 'all-to-one'){
-    SCENARIO <- "scenario = all-to-one"
-
-  } else if (scenario == 'advanced'){
-    SCENARIO <- "scenario = advanced"
-
-  } else {
-    SCENARIO <- "scenario = pairwise"
-    cat('\nDefaulting to "pairwise" mode!\n')
-  }
-
-  if (CurrentMap == FALSE) {
-    File.name <- names(r)
-    MAP = "write_cum_cur_map_only = False"
-    CURRENT.MAP = "write_cur_maps = 0"
-
-  } else {
-    if(is.null(output_dir)){
-      File.name <- tmp.name
-      # tmp.name <- File.name
-    } else {
-      if(!is.null(output_name)){
-        File.name <- output_name
-        tmp.name <- File.name
-      } else {
-        File.name <- names(r)
-        tmp.name <- File.name
-      }
-    }
-    if(isTRUE(cumulative_map_only)){
-      MAP = "write_cum_cur_map_only = True"
-    } else {
-      MAP = "write_cum_cur_map_only = False"
-    }
-    CURRENT.MAP = "write_cur_maps = True"
-  }
-
-  if(VoltageMaps == FALSE){
-    VOLTAGE <- "write_volt_maps = False"
-  } else {
-    VOLTAGE <- "write_volt_maps = True"
-  }
-
-  # Modify and write Circuitscape.ini file
-  if(Neighbor_Connect == 4) {
-    connect <- "True"
-  } else {
-    connect <- "False"
-  }
-
-  if(isTRUE(use_poly)){
-    POLYGON_FILE <- paste0("polygon_file = ", temp_poly)
-  } else {
-    POLYGON_FILE <- paste0("polygon_file = (Browse for polygon file)") # temp_loc
-  }
-
-  ## Turned off because slower to calculate specific pairs in circuitscape
-  # if(is.null(jl.inputs$pairs_to_include)) {
-  PAIRS_TO_INCLUDE <-
-    paste0("included_pairs_file = (Browse for a file with pairs to include or exclude)")
-  PAIRS <- paste0("use_included_pairs = False")
-
-  suppressWarnings(OUT <- paste0("output_file = ", normalizePath(paste0(output_dir, tmp.name, ""))))
-  suppressWarnings(BATCH <- normalizePath(paste0(output_dir, tmp.name, ".ini")))
-
-  write_ini(
-    BATCH = temp_ini,
-    OUT = OUT,
-    HABITAT = paste0("habitat_file = ", temp_rast),
-    LOCATION.FILE = paste0("point_file = ", temp_loc),
-    CONNECTION = paste0("connect_four_neighbors_only = ", connect),
-    GRNDFILE = GRNDFILE,
-    VARSOURCE = VARSOURCE,
-    SOURCEFILE = SOURCEFILE,
-    VARSOURCEFILE = VARSOURCEFILE,
-    MAP = MAP,
-    VOLTAGE = VOLTAGE,
-    CURRENT.MAP = CURRENT.MAP,
-    PAIRS_TO_INCLUDE = PAIRS_TO_INCLUDE,
-    PAIRS = PAIRS,
-    PARALLELIZE = parallel,
-    CORES = cores,
-    solver = solver,
-    precision = precision,
-    POLYGON_FILE = POLYGON_FILE,
-    USE_POLYGONS = use_poly,
-    SCENARIO = SCENARIO,
-    FOCALNODE = FOCALNODE,
-    MAXMAP = MAXMAP,
-    silent = silent,
-    is_resistance = is_resistance
-  )
-
-  # Run CIRCUITSCAPE.jl -----------------------------------------------------
-
-  if(!juliaSetupOk())
-    Sys.setenv(JULIA_BINDIR = JULIA_HOME)
-  if(!juliaSetupOk()){
-    stop("Check that the path to the Julia binary directory is correct")
-  }
-
-  try(juliaEval('using Circuitscape'), silent = T)
-  try(out <- juliaCall('compute', temp_ini), silent = T)
-
-  if(is.matrix(out)){
-    out <- out[-1,-1]
-  } else {
-  # if(any(class(out) == 'try-error')){
-    cat(readChar(temp_ini, file.info(temp_ini)$size))
-    cat("\n\n")
-    if(isTRUE(remove_files)){
-      try(unlink(rm.loc, force = TRUE), silent = T)
-      try(unlink(rm.rast, force = TRUE), silent = T)
-      try(unlink(rm.ini, force = TRUE), silent = T)
-      try(unlink(rm.src, force = TRUE), silent = T)
-      try(unlink(rm.grnd, force = TRUE), silent = T)
-      try(unlink(rm.poly, force = TRUE), silent = T)
-      try(unlink(OUT, force = TRUE), silent = T)
-    }
-
-    stop('\nCIRCUITSCAPE encountered an error!\nCheck inputs printed above carefully\n\n')
-  }
-
-  if (any(out[lower.tri(out)] == 0)) {
-    message(
-      "\n Zero values were generated by CIRCUITSCAPE \n Check point file to see if multiple points share the same raster cell!"
-    )
-  }
-
-
-  # Delete files ------------------------------------------------------------
-  if(isTRUE(remove_files)){
-    try(unlink(rm.loc, force = TRUE), silent = T)
-    try(unlink(rm.rast, force = TRUE), silent = T)
-    try(unlink(rm.ini, force = TRUE), silent = T)
-    try(unlink(rm.src, force = TRUE), silent = T)
-    try(unlink(rm.grnd, force = TRUE), silent = T)
-    try(unlink(rm.poly, force = TRUE), silent = T)
-    try(unlink(OUT, force = TRUE), silent = T)
-  }
-
-
-  # Return outputs -----------------------------------------------------------
-
-  if (output == "raster") {
-    rast_cs <- try(rast(normalizePath(paste0(output_dir, '/', File.name, "_cum_curmap.asc"))),
-                   silent = T)
-
-    names(rast_cs) <- File.name
-
-    if(!inherits(rast_crs, 'character')){
-      crs(rast_cs) <- rast_crs
-    }
-
-    if(isTRUE(VoltageMaps)){
-      volt_list <- list.files(path = normalizePath(paste0(output_dir, '/')),
-                              pattern = paste0(File.name, "_voltmap"),
-                              all.files = T,
-                              full.names = T)
-      volt_stack <- stack(sapply(volt_list, raster))
-      volt_names <- basename(unlist(volt_list))
-      names(volt_stack) <- sub('.asc', "", volt_names)
-
-      rast_cs <- stack(rast_cs, volt_stack)
-    }
-
-    if(isFALSE(cumulative_map_only)){
-      cur_list <- list.files(path = normalizePath(paste0(output_dir, '/')),
-                             pattern = paste0(File.name, "_curmap_"),
-                             all.files = T,
-                             full.names = T)
-      cur_stack <- rast(sapply(cur_list, rast))
-      cur_names <- basename(unlist(cur_list))
-      names(cur_stack) <- sub('.asc', "", cur_names)
-
-      rast_cs <- c(rast_cs, cur_stack)
-
-
-    }
-    return(rast_cs)
-  }
-  return(out)
-} # End Julia function
+    write_ini(BATCH = files["ini"], OUT = paste("output_file =", file.path(output_dir, output_name)),
+              HABITAT = paste("habitat_file =", files["habitat"]),
+              LOCATION.FILE = paste("point_file =", files["focal"]),
+              CONNECTION = paste("connect_four_neighbors_only =", Neighbor_Connect == 4),
+              GRNDFILE = ground_line, VARSOURCE = paste("use_variable_source_strengths =", scenario != "advanced" && !is.null(variable_source)),
+              SOURCEFILE = source_line, VARSOURCEFILE = strength_line,
+              MAP = paste("write_cum_cur_map_only =", cumulative_map_only),
+              VOLTAGE = paste("write_volt_maps =", VoltageMaps), CURRENT.MAP = paste("write_cur_maps =", CurrentMap),
+              PAIRS_TO_INCLUDE = pair_line, PAIRS = paste("use_included_pairs =", !is.null(pairs_to_include)),
+              PARALLELIZE = parallel, solver = if (cholmod) "cholmod" else NULL, precision = precision,
+              POLYGON_FILE = paste("polygon_file =", if (use_poly) files["regions"] else "None"),
+              USE_POLYGONS = use_poly, SCENARIO = paste("scenario =", scenario),
+              FOCALNODE = paste("set_focal_node_currents_to_zero =", focal_node_current_zero),
+              MAXMAP = paste("write_max_cur_maps =", max_map), silent = silent, is_resistance = is_resistance)
+    .cs_result(.cs_compute(files["ini"]), scenario)
+  }, error = function(e) stop("Circuitscape failed: ", conditionMessage(e), call. = FALSE))
+  if (output == "matrix") return(result)
+
+  # Select only ASCII grids, never projection sidecars. Prefix matching uses
+  # literal stems so punctuation in an output name cannot act as a regex.
+  main_file <- file.path(output_dir, paste0(output_name, if (scenario == "advanced") "_curmap.asc" else "_cum_curmap.asc"))
+  if (!file.exists(main_file)) stop("Circuitscape did not write the requested cumulative current map.")
+  paths <- main_file
+  available <- list.files(output_dir, full.names = TRUE)
+  stems <- basename(available)
+  ascii <- endsWith(tolower(stems), ".asc")
+  if (!cumulative_map_only) paths <- c(paths, available[ascii & startsWith(stems, paste0(output_name, "_curmap_"))])
+  if (VoltageMaps) paths <- c(paths, available[ascii & (startsWith(stems, paste0(output_name, "_voltmap_")) |
+                                                      stems == paste0(output_name, "_voltmap.asc"))])
+  ans <- terra::rast(paths)
+  names(ans) <- sub("\\.asc$", "", basename(paths))
+  names(ans)[1] <- output_name
+  terra::crs(ans) <- terra::crs(r)
+  if (input_raster) return(methods::as(ans, "Raster"))
+  ans
+}

@@ -21,6 +21,12 @@ for the methods that summarize and display it.
 Build a square matrix of straight-line (Euclidean) distances between a set of
 locations, ready to pass to \code{\link[=ifc]{ifc()}}.
 }
+\details{
+Coordinates must be numeric and complete. Missing values and character
+columns are rejected instead of computing pair-specific distances from
+different coordinate dimensions. Use projected coordinates for distances
+in linear map units; this function does not calculate geodesic distances.
+}
 \examples{
 set.seed(123)
 

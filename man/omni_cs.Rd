@@ -2,7 +2,7 @@
 % Please edit documentation in R/omni_cs.R
 \name{omni_cs}
 \alias{omni_cs}
-\title{Prepare data and run Julia}
+\title{Create an omnidirectional current map}
 \usage{
 omni_cs(
   JULIA_HOME = NULL,
@@ -25,21 +25,24 @@ omni_cs(
 
 \item{r}{Accepts a RasterLayer object or SpatRaster.}
 
-\item{n_nodes}{How many points to surround landscape. (Default = 20)}
+\item{n_nodes}{Integer number of distinct perimeter cells to use as focal nodes
+(default 20, minimum 2). Must not exceed the number of perimeter cells.}
 
-\item{output_dir}{Directory where CS results will be written. Only specify if Circuitscape current map outputs are requested. It is critical that there are NO SPACES in the directory, as this may cause the function to fail.}
+\item{output_dir}{Existing result directory, defaulting to \code{tempdir()}.}
 
 \item{output_name}{Name to be applied to output files. Defaults to using the raster layer names.}
 
 \item{cholmod}{(Logical; Default = TRUE). Should the cholmod solver be used?}
 
-\item{precision}{(Logical; Default = FALSE). Should experimental single precision method be used? See details.}
+\item{precision}{Logical, \code{FALSE} for double precision (default), \code{TRUE} for
+single precision. Also accepts \code{"double"} or \code{"single"}.}
 
 \item{is_resistance}{Default = TRUE. Is the landscape represented as a resistance (TRUE) or conductance (FALSE) surface?}
 
-\item{parallel}{(Logical; Default = FALSE) Do you want to run CIRCUITSCAPE in parallel? Only consider when dealing with rasters >2 million cells.}
+\item{parallel}{Logical, use Julia threads (default \code{FALSE}). See \code{\link[=run_cs]{run_cs()}}.}
 
-\item{cores}{If \code{parallel = TRUE}, how many cores should be used for parallel processing?}
+\item{cores}{Optional thread count for \code{parallel = TRUE}. A running Julia
+session must already have that many threads; see \code{\link[=run_cs]{run_cs()}}.}
 
 \item{remove_files}{Remove temporary files. Default is TRUE.}
 
@@ -54,7 +57,23 @@ Function will return an omnidirectional current flow SpatRaster.
 Create an omnidirectional current flow map
 }
 \details{
-There is extensive documentation for Circuitscape here: https://docs.circuitscape.org/Circuitscape.jl/latest/ . This function follows guidelines outlined by Koen et al. 2014 (https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/2041-210X.12197). Briefly, this function will extend a resistance surface and fill that space with random positive values. Then, points are distributed around this landscape and an 'all-to-one' Circuitscape analysis is run. Current surfaces are then trimmed to their original extent.
+This is an adaptation of the perimeter-node approach of Koen et al.
+(2014), not a reproduction of their random-node, pairwise analysis. This
+implementation uses exactly \code{n_nodes} cells spaced around the raster perimeter
+and all-to-one solves. Each focal node is grounded in turn while the other
+nodes supply current, and currents are accumulated across solves.
+
+The raster is extended by 25\% of its row and column counts on each side
+(rounded down, with at least one added row/column). Only new buffer cells
+receive positive \code{abs(rnorm(mean = 5, sd = 1))} values; missing cells inside
+the original extent remain excluded. The output is cropped and masked to the
+original raster. Set a seed before calling to reproduce the random buffer.
+Repeat with different seeds to assess buffer sensitivity. High current is
+conditional on the specified circuit and does not establish movement rates
+or the effect of habitat removal.
+
+See \code{vignette("circuitscape-workflows", package = "landconn")} and
+\doi{10.1111/2041-210X.12197} for the original perimeter-node study.
 }
 \examples{
 \dontrun{
@@ -78,4 +97,7 @@ omni_r <- omni_cs(JULIA_HOME = jl_home,
                   silent = TRUE)
 plot(omni_r)
 }
+}
+\seealso{
+\code{\link[=run_cs]{run_cs()}}, \code{\link[=julia_packages]{julia_packages()}}
 }

@@ -182,9 +182,14 @@ plot.land_dist <- function(x, ...) {
   m <- unclass(x)
   n <- nrow(m)
   ## image() plots with the first row at the bottom; flip so site 1 reads top-left.
-  graphics::image(1:n, 1:n, t(m)[, n:1],
+  graphics::image(seq_len(n), seq_len(n), t(m)[, n:1, drop = FALSE], yaxt = "n",
                   xlab = "Site", ylab = "Site",
                   main = "Pairwise distances",
                   ...)
+  labels <- rownames(m)
+  if (is.null(labels)) labels <- as.character(seq_len(n))
+  graphics::axis(2, at = seq_len(n), labels = rev(labels), las = 1)
+  graphics::mtext(paste0("Distance: ", signif(min(m), 3), " (light) to ",
+                         signif(max(m), 3), " (dark)"), side = 3, line = 0.25, cex = 0.75)
   invisible(NULL)
 }

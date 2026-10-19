@@ -61,9 +61,11 @@ ifc_optim(object, ...)
 use as a template. As a formula, the predictor named \code{connectivity} is reserved and
 recomputed by \code{\link[=ifc]{ifc()}} at each candidate \code{alpha}, for example
 \code{occupied ~ connectivity + habitat}. As a fitted model (\code{glm}, \code{glm.nb}/\code{negbin}, or
-\code{unmarked}), it must already include a \code{connectivity} term (fit it once with a
+supported \code{unmarked}), it must already include a \code{connectivity} term (fit it once with a
 placeholder, such as \code{connectivity = 0}); \code{\link[=ifc_optim]{ifc_optim()}} then refits it across \code{alpha}
-with \code{\link[stats:update]{stats::update()}}. For \code{unmarked}, \code{connectivity} lives in the \code{siteCovs}.}
+while preserving its fitted call settings. For supported single-season
+\code{unmarked::occu()} and \code{unmarked::pcount()} models, \code{connectivity} must occur
+in the state formula and in \code{siteCovs}, never in the detection formula.}
 
 \item{...}{Arguments passed between methods.}
 
@@ -97,16 +99,17 @@ appears once). See \code{\link[=ifc]{ifc()}}.}
 set from the spread of pairwise distances. If the estimate lands at a bound, widen
 this range and refit.}
 
-\item{n_grid}{Number of log-spaced \code{alpha} values in the profile grid (Default = 50).
+\item{n_grid}{Integer number of log-spaced \code{alpha} values in the profile grid
+(default 50, minimum 3).
 The grid both seeds the optimizer and sets the resolution of the profile CI; raise
 it for a finer profile.}
 
-\item{n_boot}{Number of parametric bootstrap replicates for the \code{alpha} confidence
+\item{n_boot}{Nonnegative integer number of parametric bootstrap replicates for the \code{alpha} confidence
 interval (Default = 0, no bootstrap). Each replicate simulates a new response from
 the fitted model, holding the site network fixed, and re-optimizes \code{alpha}. See
 Details.}
 
-\item{conf_level}{Confidence level for the \code{alpha} interval(s) (Default = 0.95).}
+\item{conf_level}{Numeric confidence level strictly between 0 and 1 (default 0.95).}
 }
 \value{
 When a single model and area transform are requested, an object of class
@@ -120,26 +123,48 @@ A single \code{ifc_optim} object is a list with elements:
 \item{\code{alpha}}{The estimated scale parameter, in the distance units of \code{dist_mat}.
 Larger values mean connection probability decays more slowly with distance, so
 even distant sites stay connected.}
-\item{\code{alpha_ci}}{The profile likelihood confidence interval for \code{alpha} (the
-range of grid \code{alpha} values within \code{qchisq(conf_level, 1) / 2} log-likelihood
-units of the maximum). Its resolution is the grid; raise \code{n_grid} to sharpen it.}
+\item{\code{alpha_ci}}{The lower/upper envelope of grid-supported profile intervals
+within \code{qchisq(conf_level, 1) / 2} log-likelihood units of the maximum.
+It includes the refined estimate. Inspect components and truncation flags
+before treating the envelope as a bounded, connected interval.}
 \item{\code{alpha_ci_boot}}{The bootstrap percentile interval for \code{alpha}, or \code{NULL}
 if \code{n_boot = 0}.}
 \item{\code{boot}}{The vector of bootstrap \code{alpha} estimates, or \code{NULL}.}
 \item{\code{logLik}, \code{AIC}}{The maximized log-likelihood and the AIC of the best model.
 \code{AIC} counts one extra parameter for the estimated \code{alpha}, so it is comparable
 across \code{\link[=ifc]{ifc()}} models and to a null (connectivity-free) model.}
-\item{\code{model}}{The fitted \code{glm} object at \code{alpha}. Treat its coefficients and
+\item{\code{model}}{The selected engine's fitted model at \code{alpha}. Treat its coefficients and
 standard errors as conditional on \code{alpha} (see Details).}
 \item{\code{profile}}{A data frame of \code{alpha} and \code{logLik} over the grid, used by
 \code{plot()}.}
 \item{\code{boundary}}{\code{TRUE} if \code{alpha} sits at a bound of \code{alpha_range}, a sign the
 range should be widened.}
+\item{\code{df}, \code{nobs}}{The model parameter count plus alpha, and the actual
+likelihood sample size (modeled sites for supported unmarked models).
+Missing responses do not remove sites from the connectivity network.}
+\item{\code{engine}, \code{family}}{The fitting engine label and GLM family name;
+\code{family} is \code{NULL} for unmarked engines.}
+\item{\code{ifc}}{A list with the incidence model number and area transform.}
+\item{\code{alpha_range}, \code{conf_level}}{The search bounds in distance units and
+the requested confidence level.}
+\item{\code{alpha_ci_intervals}}{A data frame of lower/upper endpoints for each
+connected set of supported grid points. Separate rows indicate disjoint
+support; the reported envelope can span unsupported values.}
+\item{\code{alpha_ci_truncated}}{Named logical lower/upper flags. \code{TRUE} means
+support reaches that search limit; widen the range before interpreting
+that endpoint as an uncertainty bound.}
+\item{\code{bootstrap}}{Requested, successful and failed replicate counts.
+At least two successful replicates are needed for a percentile interval.}
+\item{\code{diagnostics}}{Rejected candidate count and unique warning/error
+reasons. Non-converged or non-finite fits do not enter the objective.}
+\item{\code{comparison}}{Response, modeled rows, likelihood family and weights
+used to check that candidate information criteria are comparable.}
+\item{\code{call}}{The original optimization call.}
 }
 Use \code{\link[=print.ifc_optim]{print.ifc_optim()}}, \code{\link[=summary.ifc_optim]{summary.ifc_optim()}}, and \code{\link[=plot.ifc_optim]{plot.ifc_optim()}} to read it.
 }
 \description{
-Estimate the dispersal scale \code{alpha} by finding the value whose incidence
+Estimate the association scale \code{alpha} by finding the value whose incidence
 function connectivity best predicts a response in a fitted model. This is a scale of
 effect optimization: \code{alpha} is chosen to maximize the model's fit, where one
 predictor is the connectivity produced by \code{\link[=ifc]{ifc()}}. Two ways to call it: pass a
@@ -161,33 +186,44 @@ estimate is a distance: it is the scale over which connection probability falls 
 \code{exp(-1)}, about 0.37, of its maximum.
 
 \strong{Uncertainty.} Two intervals are available. The profile likelihood interval
-is fast and comes from the curvature of the profile. The parametric bootstrap
+is a grid approximation to likelihood support, with search-limit truncation
+and disjoint components reported explicitly. The parametric bootstrap
 (\code{n_boot > 0}) simulates new responses from the fitted model and re-optimizes
 \code{alpha} for each, giving a percentile interval. The bootstrap is parametric on
 purpose: connectivity is a whole-network quantity, so resampling sites would break
 the network (duplicated sites sit at zero distance). Holding the network fixed and
-resampling only the stochastic response is the coherent choice.
+resampling only the stochastic response preserves that network. GLM/NB
+bootstrapping requires a simple response column, such as \code{y ~ connectivity}.
+Transformed or structured response expressions are rejected for bootstrap
+rather than transformed a second time. Original missingness and subset
+alignment are retained. Failed replicates are counted and reported.
 
 \strong{Caveats.} The GLM treats connectivity as a fixed predictor, so the GLM's own
 standard errors and p-values for the \code{connectivity} coefficient are conditional on
-the estimated \code{alpha} and are mildly anticonservative. If the response and
+the estimated \code{alpha}; they do not include uncertainty from estimating alpha. If the response and
 \code{occ_sites} are the same occupancy data, you are predicting occupancy partly from
 itself; avoid that.
 
 \strong{Model classes.} The formula method fits a GLM. To use another class, fit it
 once with a placeholder \code{connectivity} term and pass the fitted object: a \code{glm}, a
-negative binomial model from \code{MASS::glm.nb} (class \code{negbin}), or any \code{unmarked} model
+negative binomial model from \code{MASS::glm.nb} (class \code{negbin}), or supported
+single-season \code{unmarked::occu()} and \code{unmarked::pcount()} models
 (for \code{unmarked}, put \code{connectivity} in the \code{siteCovs}). At each \code{alpha} the template
-is refit with \code{\link[stats:update]{stats::update()}}, so its own parameters (the negative binomial theta,
+is refit from its original call (via \code{\link[stats:update]{stats::update()}} for unmarked), so its
+own parameters (the negative binomial theta,
 the detection parameters of an occupancy model) are re-estimated each step. Parameter
-counts in the information criteria include those parameters plus \code{alpha}. Keep the
-template simple: complex offsets or weights may not survive the refit.
+counts in the information criteria include those parameters plus \code{alpha}. The
+original formula, weights, offsets, subset and controls are retained for GLM/NB
+templates. Original data and any objects referenced by the call must remain
+available. Unsupported unmarked classes are rejected explicitly.
 
 \strong{Comparing models.} Passing several models (or both area transforms) fits the
 best \code{alpha} for each and ranks them in a model selection table. The table counts the
 number of parameters (\code{K}) correctly: the GLM coefficients, the dispersion parameter
 for families that estimate one (such as \code{gaussian}), and one more for the optimized
-\code{alpha}. Ranking is by AICc, with delta values and Akaike weights. The same parameter
+\code{alpha}. Ranking is by AICc, with delta values and normalized weights. If all
+candidate AICc values are undefined, selection stops; fit candidates separately
+and use a defined criterion with \code{\link[=ifc_modsel]{ifc_modsel()}} instead. The same parameter
 counting is used by the \code{\link[=AIC]{AIC()}}, \code{\link[=BIC]{BIC()}}, and \code{\link[=AICc]{AICc()}} methods for \code{ifc_optim}
 objects, so a fit compares correctly against an ordinary \code{glm} with no connectivity
 term. See \code{\link[=ifc_modsel]{ifc_modsel()}}.
@@ -220,7 +256,7 @@ fits$best            # the top-ranked single fit
 ## Add a parametric bootstrap confidence interval for alpha
 fit_b <- ifc_optim(abundance ~ connectivity, data = dat,
                    dist_mat = d, model = 1, family = gaussian,
-                   n_boot = 200)
+                   n_boot = 20)
 fit_b$alpha_ci_boot
 
 ## Other model classes: fit a template with a placeholder `connectivity`, then pass it

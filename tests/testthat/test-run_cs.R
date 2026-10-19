@@ -31,7 +31,7 @@ test_that("run_cs writes nodata outside focal nodes and short-circuit regions", 
         list(nodata = nodata, cells = cells)
       }
       seen <<- list(focal = read_grid("point_file"))
-      if ("use_polygons = TRUE" %in% ini) {
+      if ("use_polygons = True" %in% ini) {
         seen$regions <<- read_grid("polygon_file")
       }
       # Circuitscape's matrix includes a leading row and column of node IDs.

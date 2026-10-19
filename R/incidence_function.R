@@ -3,12 +3,16 @@
 
 #' Calculate connectivity using incidence functions
 #'
-#' @param alpha The average dispersal distance of your organism. Should be in the same units as the distances in the `dist_mat`. See Details
+#' @param alpha Positive exponential decay scale, in the same units as `dist_mat`.
+#'   At this distance the connection weight is `exp(-1)`. A dispersal interpretation
+#'   requires independent biological justification. See Details.
 #' @param dist_mat A square pairwise distance matrix
 #' @param model Numeric value 1-4 corresponding to how connectivity will be calculated. See Details
 #' @param occ_sites A 0/1 vector equal in length to the number of sites in the `dist_mat`. If provided, only sites indicated with a 1 will contribute to connectivity. If not provided, all sites contribute to connectivity.
 #' @param patch_area If provided, can be used to calculate connectivity as a function of the area of surrounding patches (Model 2), focal patches (Model 3), or both (Model 4). Provide a numeric vector equal in length to the number of sites in the `dist_mat`, in whatever area units are meaningful to you. See Details
-#' @param scale Logical (Default = FALSE). If TRUE, connectivity estimates will be scaled to have a maximum of 1.
+#' @param scale Logical (default `FALSE`). If `TRUE`, divide nonnegative
+#'   connectivity by its maximum. An all-zero network remains zero. Negative
+#'   connectivity from log areas cannot be scaled.
 #' @param area_transform How patch area enters Models 2-4. `"none"` (Default) uses `patch_area` directly, matching the equations in Details. `"log"` uses `log(patch_area)` instead, which dampens the influence of very large patches. See Details
 #'
 #' @return An object of class `ifc`: a named numeric vector of relative connectivity
@@ -27,21 +31,21 @@
 #' model 1 --> Distance only \cr
 #' Calculate connectivity as a function of distance.\cr
 #' Hypothesis: Connectivity of patches declines as they become more isolated from other patches
-#' \deqn{C_i = \sum_{j \ne i }p_j \text{exp} (-\alpha d_{ij})}
+#' \deqn{C_i = \sum_{j \ne i }p_j \text{exp} (-d_{ij} / \alpha)}
 #'
 #' model 2 --> Contributing area \cr
 #' Calculate connectivity, weighting by the area of contributing patches.\cr
 #' Hypothesis: Larger patches contribute more individuals
-#' \deqn{C_i = \sum_{j \ne i }p_j \text{exp} (-\alpha d_{ij})A_j}
+#' \deqn{C_i = \sum_{j \ne i }p_j \text{exp} (-d_{ij} / \alpha)A_j}
 #'
 #' model 3 --> Focal area \cr
 #' Calculate connectivity, weighting by the area of the focal patches.\cr
 #' Hypothesis: Larger patches have greater attraction
-#' \deqn{C_i = A_i\sum_{j \ne i }p_j \text{exp} (-\alpha d_{ij})}
+#' \deqn{C_i = A_i\sum_{j \ne i }p_j \text{exp} (-d_{ij} / \alpha)}
 #'
 #' model 4 --> Contributing & Focal area \cr
 #' Hypothesis: Larger patches contribute more individuals and larger patches have greater attraction \cr
-#' \deqn{C_i = A_i\sum_{j \ne i }p_j \text{exp} (-\alpha d_{ij})A_j}
+#' \deqn{C_i = A_i\sum_{j \ne i }p_j \text{exp} (-d_{ij} / \alpha)A_j}
 #'
 #' \eqn{p_j} (`occ_sites`) is the occupancy of site j and modifies which patches contribute to the connectivity of a patch
 #'
@@ -122,6 +126,10 @@
 #'     scale = FALSE,
 #'     area_transform = c("none", "log"))
 #'
+#' @details `alpha` must be one finite positive number. Distances must be finite,
+#'   nonnegative, symmetric and have a zero diagonal; occupancy must contain only
+#'   0 or 1; supplied areas must be finite and positive. A fitted alpha describes
+#'   association at a distance scale and does not independently measure dispersal.
 #' @seealso [dist_mat()] to build the input distance matrix, [print.ifc()],
 #'   [summary.ifc()], and [plot.ifc()] for the methods.
 #'
@@ -138,44 +146,22 @@ ifc <- function(alpha,
 
   area_transform <- match.arg(area_transform)
 
-  ## Checks
-  if(inherits(dist_mat, "matrix")){
-    if(dim(dist_mat)[1] != dim(dist_mat)[2]){
-      stop("`dist_mat` must be a square distance matrix")
-    }
-  } else {
-    stop("`dist_mat` must be a square distance matrix")
+  .check_distances(dist_mat)
+  if (missing(alpha)) stop("A numeric value for `alpha` must be provided")
+  .check_scalar(alpha, "alpha", lower = 0, open_lower = TRUE)
+  if (missing(model)) stop("A numeric value for `model` must be provided")
+  if (!is.numeric(model) || length(model) != 1L || !is.finite(model) ||
+      model != floor(model) || !model %in% 1:4) stop("`model` must be one integer in 1-4.")
+  if (model > 1 && is.null(patch_area)) stop("`patch_area` must be provided for models 2, 3, and 4.")
+  if (!is.logical(scale) || length(scale) != 1L || is.na(scale)) stop("`scale` must be TRUE or FALSE.")
+  if (!is.null(occ_sites) && (!is.numeric(occ_sites) && !is.logical(occ_sites) ||
+      length(occ_sites) != nrow(dist_mat) || anyNA(occ_sites) || any(!occ_sites %in% c(0, 1)))) {
+    stop("`occ_sites` must have length equal to the sites and contain only 0 or 1.")
   }
-
-
-  if(missing(alpha) || !is.numeric(alpha)){
-    stop('A numeric value for `alpha` must be provided')
+  if (!is.null(patch_area) && (!is.numeric(patch_area) || length(patch_area) != nrow(dist_mat) ||
+      any(!is.finite(patch_area)) || any(patch_area <= 0))) {
+    stop("`patch_area` must have length equal to the sites and contain finite positive areas.")
   }
-
-  if(missing(model) || !is.numeric(model)){
-    stop('A numeric value for `model` must be provided')
-  }
-
-  if(!(model >= 1 & model <= 4)){
-    stop('`model` must be a numeric value 1-4. See Details.')
-  }
-
-  if(model > 1 && is.null(patch_area)){
-    stop('`patch_area` must be provided for models 2, 3, and 4. See Details.')
-  }
-
-  if(!is.null(occ_sites)){
-    if(length(occ_sites) != dim(dist_mat)[1]){
-      stop("occ_sites must be a vector of equal length as sites in the dist_mat")
-    }
-  }
-
-  if(!is.null(patch_area)){
-    if(length(patch_area) != dim(dist_mat)[1]){
-      stop("patch_area must be a vector of equal length as sites in the dist_mat")
-    }
-  }
-
 
   # Connectivity probability ------------------------------------------------
 
@@ -229,7 +215,9 @@ ifc <- function(alpha,
   }
 
   if(isTRUE(scale)){
-    connectivity <- connectivity / max(connectivity)
+    if (any(connectivity < 0)) stop("Cannot scale negative connectivity; use log areas greater than 1.")
+    peak <- max(connectivity)
+    if (peak > 0) connectivity <- connectivity / peak
   }
 
   ## Return a classed `ifc` object: a numeric vector carrying its model context.

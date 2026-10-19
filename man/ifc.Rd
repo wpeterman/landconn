@@ -13,7 +13,9 @@ ifc(alpha,
     area_transform = c("none", "log"))
 }
 \arguments{
-\item{alpha}{The average dispersal distance of your organism. Should be in the same units as the distances in the \code{dist_mat}. See Details}
+\item{alpha}{Positive exponential decay scale, in the same units as \code{dist_mat}.
+At this distance the connection weight is \code{exp(-1)}. A dispersal interpretation
+requires independent biological justification. See Details.}
 
 \item{dist_mat}{A square pairwise distance matrix}
 
@@ -23,7 +25,9 @@ ifc(alpha,
 
 \item{patch_area}{If provided, can be used to calculate connectivity as a function of the area of surrounding patches (Model 2), focal patches (Model 3), or both (Model 4). Provide a numeric vector equal in length to the number of sites in the \code{dist_mat}, in whatever area units are meaningful to you. See Details}
 
-\item{scale}{Logical (Default = FALSE). If TRUE, connectivity estimates will be scaled to have a maximum of 1.}
+\item{scale}{Logical (default \code{FALSE}). If \code{TRUE}, divide nonnegative
+connectivity by its maximum. An all-zero network remains zero. Negative
+connectivity from log areas cannot be scaled.}
 
 \item{area_transform}{How patch area enters Models 2-4. \code{"none"} (Default) uses \code{patch_area} directly, matching the equations in Details. \code{"log"} uses \code{log(patch_area)} instead, which dampens the influence of very large patches. See Details}
 }
@@ -48,26 +52,31 @@ Calculate connectivity using incidence functions
 model 1 --> Distance only \cr
 Calculate connectivity as a function of distance.\cr
 Hypothesis: Connectivity of patches declines as they become more isolated from other patches
-\deqn{C_i = \sum_{j \ne i }p_j \text{exp} (-\alpha d_{ij})}
+\deqn{C_i = \sum_{j \ne i }p_j \text{exp} (-d_{ij} / \alpha)}
 
 model 2 --> Contributing area \cr
 Calculate connectivity, weighting by the area of contributing patches.\cr
 Hypothesis: Larger patches contribute more individuals
-\deqn{C_i = \sum_{j \ne i }p_j \text{exp} (-\alpha d_{ij})A_j}
+\deqn{C_i = \sum_{j \ne i }p_j \text{exp} (-d_{ij} / \alpha)A_j}
 
 model 3 --> Focal area \cr
 Calculate connectivity, weighting by the area of the focal patches.\cr
 Hypothesis: Larger patches have greater attraction
-\deqn{C_i = A_i\sum_{j \ne i }p_j \text{exp} (-\alpha d_{ij})}
+\deqn{C_i = A_i\sum_{j \ne i }p_j \text{exp} (-d_{ij} / \alpha)}
 
 model 4 --> Contributing & Focal area \cr
 Hypothesis: Larger patches contribute more individuals and larger patches have greater attraction \cr
-\deqn{C_i = A_i\sum_{j \ne i }p_j \text{exp} (-\alpha d_{ij})A_j}
+\deqn{C_i = A_i\sum_{j \ne i }p_j \text{exp} (-d_{ij} / \alpha)A_j}
 
 \eqn{p_j} (\code{occ_sites}) is the occupancy of site j and modifies which patches contribute to the connectivity of a patch
 
 In the equations above, \eqn{A_j} and \eqn{A_i} are patch areas entered directly, which is the default (\code{area_transform = "none"}). Setting \code{area_transform = "log"} substitutes \eqn{\log(A_j)} and \eqn{\log(A_i)} in Models 2-4. Note that \code{log()} of an area less than 1 is negative, so use \code{"log"} only when your area values are comfortably greater than 1. Model 1 does not use patch area and is unaffected by this argument.
 }
+
+\code{alpha} must be one finite positive number. Distances must be finite,
+nonnegative, symmetric and have a zero diagonal; occupancy must contain only
+0 or 1; supplied areas must be finite and positive. A fitted alpha describes
+association at a distance scale and does not independently measure dispersal.
 }
 \examples{
 set.seed(123)

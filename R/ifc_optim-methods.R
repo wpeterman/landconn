@@ -10,7 +10,7 @@
 #'
 #' @return
 #'   `print()` and `summary()` return their input invisibly after printing.
-#'   `summary()` additionally prints the fitted GLM coefficient table. `plot()` draws the
+#'   `summary()` additionally prints the engine's coefficient table or summary. `plot()` draws the
 #'   `alpha` profile (log-likelihood against `alpha`) with the estimate, the confidence
 #'   threshold, and the interval marked, and returns `NULL` invisibly.
 #'
@@ -47,15 +47,23 @@ print.ifc_optim <- function(x, ...) {
   cat("  ", round(100 * x$conf_level), "% profile CI: ",
       signif(x$alpha_ci[1], 4), " to ", signif(x$alpha_ci[2], 4), "\n", sep = "")
   if(!is.null(x$alpha_ci_boot)){
+    counts <- x$bootstrap
+    if (is.null(counts)) counts <- c(successful = sum(is.finite(x$boot)), failed = sum(!is.finite(x$boot)))
     cat("  ", round(100 * x$conf_level), "% bootstrap CI: ",
         signif(x$alpha_ci_boot[1], 4), " to ", signif(x$alpha_ci_boot[2], 4),
-        " (", length(x$boot), " reps)\n", sep = "")
+        " (", counts["successful"], " successful; ", counts["failed"], " failed)\n", sep = "")
   }
   cat("  logLik:      ", round(x$logLik, 3),
       " | AIC: ", round(x$AIC, 2), " (includes alpha)\n", sep = "")
   if(isTRUE(x$boundary)){
     cat("\n  NOTE: alpha is at a bound of the search range; widen `alpha_range` and refit.\n")
   }
+  if (any(x$alpha_ci_truncated)) cat("  NOTE: profile support reaches a search limit; the interval is truncated.\n")
+  if (!is.null(x$alpha_ci_intervals) && nrow(x$alpha_ci_intervals) > 1L) {
+    cat("  NOTE: profile support is disjoint; inspect alpha_ci_intervals.\n")
+    print(x$alpha_ci_intervals)
+  }
+  if (isTRUE(x$diagnostics$rejected > 0)) cat("  Rejected candidate fits: ", x$diagnostics$rejected, "; inspect diagnostics.\n", sep = "")
   invisible(x)
 }
 
@@ -78,7 +86,7 @@ plot.ifc_optim <- function(x, ...) {
   prof <- x$profile[is.finite(x$profile$logLik), ]
   plot(prof$alpha, prof$logLik, type = "l",
        log = "x",
-       xlab = "alpha (dispersal scale)",
+       xlab = "alpha (association scale)",
        ylab = "log-likelihood",
        main = "Incidence scale profile",
        ...)

@@ -77,3 +77,16 @@ test_that("ifc methods run without error", {
   expect_output(summary(c4), "summary")
   expect_invisible(plot(c4))
 })
+
+test_that("all four formulations agree with hand-worked three-site contributions", {
+  d <- matrix(c(0, 1, 2, 1, 0, 1, 2, 1, 0), 3)
+  e1 <- exp(-.5); e2 <- exp(-1)
+  expected <- list(c(e2, 2 * e1, e2),
+                   c(5 * e2, 7 * e1, 2 * e2),
+                   c(2 * e2, 6 * e1, 5 * e2),
+                   c(10 * e2, 21 * e1, 10 * e2))
+  for (model in 1:4) {
+    expect_equal(as.numeric(ifc(2, d, model, occ_sites = c(1, 0, 1), patch_area = c(2, 3, 5))),
+                   expected[[model]])
+  }
+})

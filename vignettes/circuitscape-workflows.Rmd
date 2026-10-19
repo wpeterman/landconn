@@ -1,0 +1,215 @@
+---
+title: "Polygon cores and Circuitscape workflows"
+author: "Bill Peterman"
+output:
+  rmarkdown::html_vignette:
+    number_sections: true
+    toc: true
+vignette: >
+  %\VignetteIndexEntry{Polygon cores and Circuitscape workflows}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", fig.width = 6, fig.height = 4.25)
+```
+
+# Prepare a circuit with explicit node IDs
+
+Start with `vignette("getting-started", package = "landconn")` for the distinction
+between incidence connectivity and resistance-surface analysis. This guide
+constructs a small artificial landscape so that every input is explicit.
+Preparation below runs in ordinary R; solver chunks require local Julia and
+Circuitscape and are shown without execution during package checking.
+
+```{r prepare, fig.alt="Uniform illustrative habitat with four separated polygon cores carrying explicit IDs."}
+library(landconn)
+library(terra)
+habitat <- rast(nrows = 8, ncols = 8, xmin = 0, xmax = 8, ymin = 0, ymax = 8,
+                 crs = "EPSG:3857")
+values(habitat) <- 1
+points <- vect(cbind(c(1.5, 6.5, 6.5, 1.5), c(1.5, 1.5, 6.5, 6.5)),
+                crs = crs(habitat))
+points$core_id <- c(44L, 11L, 33L, 22L)
+cores <- buffer(points, width = 0.6)
+plot(habitat)
+plot(cores, add = TRUE)
+```
+
+Rows deliberately have unsorted IDs. `field = "core_id"` preserves these values;
+the returned pairwise matrix is labeled by ID. Without a field, row numbers
+become IDs. Every core must cover at least one valid habitat cell. Very small
+polygons or overlapping cores may disappear when rasterized and produce a clear
+error. Point features must occupy distinct cells.
+
+Habitat values must be positive and finite. Mark excluded cells with `NA`, not a
+large resistance code. All grids use the same extent, square cell size and
+coordinate system. Missing cells outside focal nodes are serialized as nodata;
+they never become an additional core. Coordinates with undeclared CRS are assumed
+aligned, so supplying a correct shared CRS is preferable.
+
+# Set up Julia once
+
+```{r julia, eval=FALSE}
+jl_home <- "C:/path/to/Julia/bin" # replace with your installation directory
+julia_packages(jl_home, install_libraries = TRUE)
+```
+
+Installation changes the active Julia package environment and needs network
+access. Only Circuitscape is installed; ConScape and plotting libraries are not
+required by this workflow. On subsequent sessions, use
+`install_libraries = FALSE`. For reproducible projects, retain a Julia project
+and its package versions. Local integration was verified with Julia 1.12.6 and
+Circuitscape 5.17.1. The optional CI job pins that Circuitscape version; other
+versions require their own integration validation.
+
+# Pairwise resistance and output maps
+
+```{r pairwise, eval=FALSE}
+distances <- run_cs(jl_home, habitat, cores, field = "core_id",
+                     output = "matrix", CurrentMap = FALSE)
+distances
+
+maps <- run_cs(jl_home, habitat, cores, field = "core_id",
+                output_dir = tempdir(), output_name = "core_demo",
+                cumulative_map_only = FALSE, VoltageMaps = TRUE)
+plot(maps[[1]])
+```
+
+**How to read the matrix:** rows and columns are circuit node IDs, rather than
+the original feature row order. Entries are effective resistance under the
+specified landscape and connection rule. The diagonal is zero. Larger values
+indicate greater electrical isolation in this modeled circuit; they are not
+geographic distances or calibrated dispersal probabilities.
+
+**How to read the maps:** the first layer is cumulative current. Requested
+individual pair currents follow, then voltages. File stems identify layers.
+Projection sidecars are excluded when loading maps. Current concentrates along
+routes favored by this resistance and node design. That makes high-current cells
+candidates for closer assessment, rather than proving the effect of habitat loss.
+SpatRaster inputs return a SpatRaster; legacy RasterLayer inputs return a legacy
+Raster object. Maximum-current maps, when requested, are saved separately.
+
+To select pairs, order node IDs increasingly, then use the column-wise lower
+triangle. For IDs 11, 22, 33, 44, the order is (22,11), (33,11), (44,11),
+(33,22), (44,22), (44,33).
+
+```{r pairs, eval=FALSE}
+selected <- run_cs(jl_home, habitat, cores, field = "core_id",
+                    output = "matrix", CurrentMap = FALSE,
+                    pairs_to_include = c(1, 0, 0, 0, 0, 0))
+```
+
+Only selected pairs are solved. Inspect the returned node labels: IDs absent
+from all retained pairs may be omitted by Circuitscape. At least one pair must be
+retained. Pair selection is rejected in scenarios without this contract.
+
+# Per-node strengths and advanced grounds
+
+```{r per-node, eval=FALSE}
+strengths <- cbind(node_id = c(11, 22, 33, 44), amperes = c(1, 2, 1, 1))
+nodes <- run_cs(jl_home, habitat, cores, field = "core_id", scenario = "one-to-all",
+                 variable_source = strengths, CurrentMap = FALSE, output = "matrix")
+nodes
+```
+
+One-to-all and all-to-one return a two-column matrix, `node_id` and `resistance`,
+with every focal ID retained. Unlike pairwise output, there is no header row to
+remove. Strengths are a two-column ID/amperes table; IDs not listed keep the
+solver's default unit strength. Values reported by these scenarios should be
+interpreted with their source and ground design, especially when strengths differ.
+
+Advanced mode instead attaches sources and grounds to the listed core IDs:
+
+```{r advanced, eval=FALSE}
+voltage <- run_cs(jl_home, habitat, cores, field = "core_id", scenario = "advanced",
+                   variable_source = cbind(11, 1),  # one ampere at core 11
+                   variable_ground = cbind(44, 0),  # direct ground at core 44
+                   CurrentMap = FALSE, output = "matrix")
+```
+
+The returned matrix is a complete voltage grid in raster row/column order,
+without any stripped rows. For each polygon core, one source or ground is
+attached to its first represented cell; all cells with that region ID are
+collapsed into a single circuit node. Thus the source is a total current per
+core, not a repeated injection into every cell. Ground values are resistances
+to ground, with zero denoting a direct ground, even for conductance habitat.
+Source and ground IDs must be disjoint. A point ID occupying multiple cells is
+rejected in advanced mode because it is not a single short-circuited node.
+
+Supplying `regions = cores` selects one valid raster cell per region as the
+focal node, replacing any supplied point locations. Sampling preserves each
+region ID and excludes habitat nodata cells. Set a seed before the call to
+reproduce the selection.
+
+# Omnidirectional maps and masks
+
+```{r omni, eval=FALSE}
+habitat[28] <- NA # an excluded internal cell remains excluded during the solve
+set.seed(100)
+omni <- omni_cs(jl_home, habitat, n_nodes = 12)
+plot(omni)
+```
+
+This adapts the perimeter-node idea in Koen et al. (2014). Their study used
+random perimeter nodes and pairwise connections. This implementation uses
+regularly spaced unique perimeter cells and all-to-one solves, so the two designs
+should not be assumed equivalent. Each node is grounded in turn while the
+remaining nodes supply current.
+
+The buffer extends by 25% of the original row/column counts on each side,
+rounded down with at least one added row and column. Only new buffer cells
+receive positive values drawn as the absolute value of a normal distribution
+with mean 5 and standard deviation 1. Original missing cells remain excluded
+throughout the solve and in the cropped output. Exactly `n_nodes` distinct cells
+are used; requesting more nodes than the perimeter can hold is an error. Repeat
+the analysis with different seeds to assess sensitivity to this artificial buffer.
+
+# Threads, errors and retained files
+
+For parallel work, set threads before Julia starts. A running process cannot
+change its Julia thread count. In a fresh R session:
+
+```{r threads, eval=FALSE}
+distances <- run_cs(jl_home, habitat, cores, field = "core_id",
+                     parallel = TRUE, cores = 2, output = "matrix",
+                     CurrentMap = FALSE)
+```
+
+The actual Julia thread count is checked. A mismatch is an actionable error,
+not a silently ignored core count. R environment variables are restored after
+the call; the Julia process itself persists. Parallel execution does not promise
+a speed improvement for a small grid.
+
+Temporary input grids and configurations are cleaned on success and failure by
+default. `remove_files = FALSE` retains them for investigation. Requested solver
+output maps remain in `output_dir`. Use a distinct output name for each run.
+Errors retain the original solver message, and configuration writing preserves
+the caller's output redirection.
+
+# Quick reference
+
+```{r quick, eval=FALSE}
+distances <- run_cs(jl_home, habitat, cores, field = "core_id",
+                     output = "matrix", CurrentMap = FALSE) # named resistance matrix
+maps <- run_cs(jl_home, habitat, cores, field = "core_id")   # cumulative current first
+set.seed(100)
+omni <- omni_cs(jl_home, habitat, n_nodes = 12)              # original mask retained
+```
+
+| Function | Purpose |
+|----------|---------|
+| `julia_packages()` | Optionally install and load Circuitscape |
+| `run_cs()` | Prepare ID grids and run a specified circuit design |
+| `omni_cs()` | Accumulate current under a buffered perimeter-node design |
+
+See `vignette("getting-started", package = "landconn")` and
+`vignette("model-engines", package = "landconn")` for the incidence workflows.
+
+# References
+
+Koen, E. L., Bowman, J., Sadowski, C., and Walpole, A. A. (2014). Landscape
+connectivity for wildlife: development and validation of multispecies linkage
+maps. *Methods in Ecology and Evolution*, 5(7), 626-633.
+<doi:10.1111/2041-210X.12197>

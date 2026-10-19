@@ -21,7 +21,7 @@
 }
 \value{
 \code{print()} and \code{summary()} return their input invisibly after printing.
-\code{summary()} additionally prints the fitted GLM coefficient table. \code{plot()} draws the
+\code{summary()} additionally prints the engine's coefficient table or summary. \code{plot()} draws the
 \code{alpha} profile (log-likelihood against \code{alpha}) with the estimate, the confidence
 threshold, and the interval marked, and returns \code{NULL} invisibly.
 }

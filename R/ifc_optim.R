@@ -2,7 +2,7 @@
 
 #' Optimize the incidence function scale parameter (alpha)
 #'
-#' Estimate the dispersal scale `alpha` by finding the value whose incidence
+#' Estimate the association scale `alpha` by finding the value whose incidence
 #' function connectivity best predicts a response in a fitted model. This is a scale of
 #' effect optimization: `alpha` is chosen to maximize the model's fit, where one
 #' predictor is the connectivity produced by [ifc()]. Two ways to call it: pass a
@@ -14,9 +14,11 @@
 #'   use as a template. As a formula, the predictor named `connectivity` is reserved and
 #'   recomputed by [ifc()] at each candidate `alpha`, for example
 #'   `occupied ~ connectivity + habitat`. As a fitted model (`glm`, `glm.nb`/`negbin`, or
-#'   `unmarked`), it must already include a `connectivity` term (fit it once with a
+#'   supported `unmarked`), it must already include a `connectivity` term (fit it once with a
 #'   placeholder, such as `connectivity = 0`); [ifc_optim()] then refits it across `alpha`
-#'   with [stats::update()]. For `unmarked`, `connectivity` lives in the `siteCovs`.
+#'   while preserving its fitted call settings. For supported single-season
+#'   `unmarked::occu()` and `unmarked::pcount()` models, `connectivity` must occur
+#'   in the state formula and in `siteCovs`, never in the detection formula.
 #' @param data A data frame with one row per site, in the same order as the rows of
 #'   `dist_mat`. It holds the response and any covariates in the formula (but not
 #'   `connectivity`, which is generated internally). Used only with the formula method.
@@ -41,14 +43,15 @@
 #'   `alpha` search, in the same distance units as `dist_mat`. If `NULL` (Default), it is
 #'   set from the spread of pairwise distances. If the estimate lands at a bound, widen
 #'   this range and refit.
-#' @param n_grid Number of log-spaced `alpha` values in the profile grid (Default = 50).
+#' @param n_grid Integer number of log-spaced `alpha` values in the profile grid
+#'   (default 50, minimum 3).
 #'   The grid both seeds the optimizer and sets the resolution of the profile CI; raise
 #'   it for a finer profile.
-#' @param n_boot Number of parametric bootstrap replicates for the `alpha` confidence
+#' @param n_boot Nonnegative integer number of parametric bootstrap replicates for the `alpha` confidence
 #'   interval (Default = 0, no bootstrap). Each replicate simulates a new response from
 #'   the fitted model, holding the site network fixed, and re-optimizes `alpha`. See
 #'   Details.
-#' @param conf_level Confidence level for the `alpha` interval(s) (Default = 0.95).
+#' @param conf_level Numeric confidence level strictly between 0 and 1 (default 0.95).
 #'
 #' @return When a single model and area transform are requested, an object of class
 #'   `ifc_optim`. When several are requested (a vector `model`, or `area_transform =
@@ -62,21 +65,44 @@
 #'     \item{`alpha`}{The estimated scale parameter, in the distance units of `dist_mat`.
 #'       Larger values mean connection probability decays more slowly with distance, so
 #'       even distant sites stay connected.}
-#'     \item{`alpha_ci`}{The profile likelihood confidence interval for `alpha` (the
-#'       range of grid `alpha` values within `qchisq(conf_level, 1) / 2` log-likelihood
-#'       units of the maximum). Its resolution is the grid; raise `n_grid` to sharpen it.}
+#'     \item{`alpha_ci`}{The lower/upper envelope of grid-supported profile intervals
+#'       within `qchisq(conf_level, 1) / 2` log-likelihood units of the maximum.
+#'       It includes the refined estimate. Inspect components and truncation flags
+#'       before treating the envelope as a bounded, connected interval.}
 #'     \item{`alpha_ci_boot`}{The bootstrap percentile interval for `alpha`, or `NULL`
 #'       if `n_boot = 0`.}
 #'     \item{`boot`}{The vector of bootstrap `alpha` estimates, or `NULL`.}
 #'     \item{`logLik`, `AIC`}{The maximized log-likelihood and the AIC of the best model.
 #'       `AIC` counts one extra parameter for the estimated `alpha`, so it is comparable
 #'       across [ifc()] models and to a null (connectivity-free) model.}
-#'     \item{`model`}{The fitted `glm` object at `alpha`. Treat its coefficients and
+#'     \item{`model`}{The selected engine's fitted model at `alpha`. Treat its coefficients and
 #'       standard errors as conditional on `alpha` (see Details).}
 #'     \item{`profile`}{A data frame of `alpha` and `logLik` over the grid, used by
 #'       `plot()`.}
 #'     \item{`boundary`}{`TRUE` if `alpha` sits at a bound of `alpha_range`, a sign the
 #'       range should be widened.}
+#'     \item{`df`, `nobs`}{The model parameter count plus alpha, and the actual
+#'       likelihood sample size (modeled sites for supported unmarked models).
+#'       Missing responses do not remove sites from the connectivity network.}
+#'     \item{`engine`, `family`}{The fitting engine label and GLM family name;
+#'       `family` is `NULL` for unmarked engines.}
+#'     \item{`ifc`}{A list with the incidence model number and area transform.}
+#'     \item{`alpha_range`, `conf_level`}{The search bounds in distance units and
+#'       the requested confidence level.}
+#'     \item{`alpha_ci_intervals`}{A data frame of lower/upper endpoints for each
+#'       connected set of supported grid points. Separate rows indicate disjoint
+#'       support; the reported envelope can span unsupported values.}
+#'     \item{`alpha_ci_truncated`}{Named logical lower/upper flags. `TRUE` means
+#'       support reaches that search limit; widen the range before interpreting
+#'       that endpoint as an uncertainty bound.}
+#'     \item{`bootstrap`}{Requested, successful and failed replicate counts.
+#'       At least two successful replicates are needed for a percentile interval.}
+#'     \item{`diagnostics`}{Rejected candidate count and unique warning/error
+#'       reasons. Non-converged or non-finite fits do not enter the objective.}
+#'     \item{`comparison`}{Response, modeled rows, likelihood family and weights
+#'       used to check that candidate information criteria are comparable.}
+#'     \item{`call`}{The original optimization call.}
+
 #'   }
 #'   Use [print.ifc_optim()], [summary.ifc_optim()], and [plot.ifc_optim()] to read it.
 #'
@@ -94,33 +120,44 @@
 #'   `exp(-1)`, about 0.37, of its maximum.
 #'
 #'   \strong{Uncertainty.} Two intervals are available. The profile likelihood interval
-#'   is fast and comes from the curvature of the profile. The parametric bootstrap
+#'   is a grid approximation to likelihood support, with search-limit truncation
+#'   and disjoint components reported explicitly. The parametric bootstrap
 #'   (`n_boot > 0`) simulates new responses from the fitted model and re-optimizes
 #'   `alpha` for each, giving a percentile interval. The bootstrap is parametric on
 #'   purpose: connectivity is a whole-network quantity, so resampling sites would break
 #'   the network (duplicated sites sit at zero distance). Holding the network fixed and
-#'   resampling only the stochastic response is the coherent choice.
+#'   resampling only the stochastic response preserves that network. GLM/NB
+#'   bootstrapping requires a simple response column, such as `y ~ connectivity`.
+#'   Transformed or structured response expressions are rejected for bootstrap
+#'   rather than transformed a second time. Original missingness and subset
+#'   alignment are retained. Failed replicates are counted and reported.
 #'
 #'   \strong{Caveats.} The GLM treats connectivity as a fixed predictor, so the GLM's own
 #'   standard errors and p-values for the `connectivity` coefficient are conditional on
-#'   the estimated `alpha` and are mildly anticonservative. If the response and
+#'   the estimated `alpha`; they do not include uncertainty from estimating alpha. If the response and
 #'   `occ_sites` are the same occupancy data, you are predicting occupancy partly from
 #'   itself; avoid that.
 #'
 #'   \strong{Model classes.} The formula method fits a GLM. To use another class, fit it
 #'   once with a placeholder `connectivity` term and pass the fitted object: a `glm`, a
-#'   negative binomial model from `MASS::glm.nb` (class `negbin`), or any `unmarked` model
+#'   negative binomial model from `MASS::glm.nb` (class `negbin`), or supported
+#'   single-season `unmarked::occu()` and `unmarked::pcount()` models
 #'   (for `unmarked`, put `connectivity` in the `siteCovs`). At each `alpha` the template
-#'   is refit with [stats::update()], so its own parameters (the negative binomial theta,
+#'   is refit from its original call (via [stats::update()] for unmarked), so its
+#'   own parameters (the negative binomial theta,
 #'   the detection parameters of an occupancy model) are re-estimated each step. Parameter
-#'   counts in the information criteria include those parameters plus `alpha`. Keep the
-#'   template simple: complex offsets or weights may not survive the refit.
+#'   counts in the information criteria include those parameters plus `alpha`. The
+#'   original formula, weights, offsets, subset and controls are retained for GLM/NB
+#'   templates. Original data and any objects referenced by the call must remain
+#'   available. Unsupported unmarked classes are rejected explicitly.
 #'
 #'   \strong{Comparing models.} Passing several models (or both area transforms) fits the
 #'   best `alpha` for each and ranks them in a model selection table. The table counts the
 #'   number of parameters (`K`) correctly: the GLM coefficients, the dispersion parameter
 #'   for families that estimate one (such as `gaussian`), and one more for the optimized
-#'   `alpha`. Ranking is by AICc, with delta values and Akaike weights. The same parameter
+#'   `alpha`. Ranking is by AICc, with delta values and normalized weights. If all
+#'   candidate AICc values are undefined, selection stops; fit candidates separately
+#'   and use a defined criterion with [ifc_modsel()] instead. The same parameter
 #'   counting is used by the [AIC()], [BIC()], and [AICc()] methods for `ifc_optim`
 #'   objects, so a fit compares correctly against an ordinary `glm` with no connectivity
 #'   term. See [ifc_modsel()].
@@ -153,7 +190,7 @@
 #' ## Add a parametric bootstrap confidence interval for alpha
 #' fit_b <- ifc_optim(abundance ~ connectivity, data = dat,
 #'                    dist_mat = d, model = 1, family = gaussian,
-#'                    n_boot = 200)
+#'                    n_boot = 20)
 #' fit_b$alpha_ci_boot
 #'
 #' ## Other model classes: fit a template with a placeholder `connectivity`, then pass it
@@ -185,7 +222,7 @@ ifc_optim.formula <- function(object, data, dist_mat, model = 1,
                               conf_level = 0.95, ...) {
 
   formula <- stats::as.formula(object)
-  if(!("connectivity" %in% all.vars(formula))){
+  if(length(formula) != 3L || !("connectivity" %in% all.vars(formula[[3]]))){
     stop("`formula` must include the reserved predictor `connectivity`, e.g. `y ~ connectivity`.")
   }
   if(!is.data.frame(data)){
@@ -213,22 +250,7 @@ ifc_optim.formula <- function(object, data, dist_mat, model = 1,
 
 # Adapter for the formula method: fit a GLM with connectivity as a predictor.
 adapter_formula <- function(formula, data, family) {
-  resp_name <- all.vars(formula[[2]])[1]
-  list(
-    n_sites = nrow(data),
-    label   = paste0("glm (", family$family, ")"),
-    family  = family$family,
-    fit = function(conn, response = NULL) {
-      dat <- data
-      dat$connectivity <- conn
-      if(!is.null(response)) dat[[resp_name]] <- response
-      tryCatch(suppressWarnings(stats::glm(formula, data = dat, family = family)),
-               error = function(e) NULL)
-    },
-    loglik   = function(fitted) as.numeric(stats::logLik(fitted)),
-    npar     = function(fitted) as.integer(attr(stats::logLik(fitted), "df")),
-    simulate = function(fitted, nsim) stats::simulate(fitted, nsim = nsim)
-  )
+  .glm_adapter(formula, data, family = family)
 }
 
 # Optimize alpha for one (model, area_transform) combination using an adapter.
@@ -236,76 +258,87 @@ optimize_engine <- function(adapter, dist_mat, model, area_transform,
                             patch_area, occ_sites, alpha_range,
                             n_grid, n_boot, conf_level) {
 
-  conn_at <- function(alpha) {
-    as.numeric(ifc(alpha, dist_mat, model = model,
-                   patch_area = patch_area, occ_sites = occ_sites,
-                   area_transform = area_transform))
-  }
+  adapter$reset_diagnostics()
 
+  conn_at <- function(alpha) as.numeric(ifc(alpha, dist_mat, model = model,
+                     patch_area = patch_area, occ_sites = occ_sites, area_transform = area_transform))
   ll_at <- function(alpha, response = NULL) {
     fit <- adapter$fit(conn_at(alpha), response = response)
-    if(is.null(fit)) return(NA_real_)
-    adapter$loglik(fit)
+    if (is.null(fit)) return(-Inf)
+    ll <- adapter$loglik(fit)
+    if (length(ll) != 1L || !is.finite(ll)) -Inf else ll
   }
-
-  ## grid scan, then refine around the best cell
   optim_alpha <- function(response = NULL) {
     grid <- exp(seq(log(alpha_range[1]), log(alpha_range[2]), length.out = n_grid))
-    gll  <- vapply(grid, function(a) ll_at(a, response), numeric(1))
-    if(all(is.na(gll))){
-      stop("The model could not be fit at any alpha. Check the model, family, and data.")
+    gll <- vapply(grid, function(a) ll_at(a, response), numeric(1))
+    if (!any(is.finite(gll))) {
+      stop("No candidate model converged with a finite likelihood. ",
+           paste(adapter$diagnostics()$reasons, collapse = " "), call. = FALSE)
     }
-    k   <- which.max(gll)
-    opt <- stats::optimize(function(a) -ll_at(a, response),
-                           lower = grid[max(1, k - 1)], upper = grid[min(n_grid, k + 1)])
-    list(alpha = opt$minimum, grid = grid, gll = gll, logLik = -opt$objective)
+    k <- which.max(gll)
+    opt <- stats::optimize(function(a) {
+      ll <- ll_at(a, response)
+      if (is.finite(ll)) -ll else 1e100
+    }, lower = grid[max(1, k - 1)], upper = grid[min(n_grid, k + 1)])
+    # Retain a grid endpoint if refinement finds a worse or invalid candidate.
+    candidates <- c(grid[k], opt$minimum)
+    scores <- c(gll[k], ll_at(opt$minimum, response))
+    best <- which.max(scores)
+    list(alpha = candidates[best], logLik = scores[best], grid = grid, gll = gll)
   }
-
-  res  <- optim_alpha()
+  if (n_boot > 0 && !isTRUE(adapter$simple_response)) {
+    stop("Bootstrap requires a simple response column; transformed and structured responses are unsupported.")
+  }
+  res <- optim_alpha()
   best <- adapter$fit(conn_at(res$alpha))
-
-  ## profile likelihood CI: grid alphas within the chi-square threshold of the max
-  thresh   <- res$logLik - stats::qchisq(conf_level, 1) / 2
-  in_ci    <- res$grid[!is.na(res$gll) & res$gll >= thresh]
-  alpha_ci <- if(length(in_ci)) range(in_ci) else c(NA_real_, NA_real_)
+  if (is.null(best)) stop("The selected candidate failed its convergence check on refitting.")
+  thresh <- res$logLik - stats::qchisq(conf_level, 1) / 2
+  # Keep disjoint supported intervals visible instead of hiding gaps in one range.
+  pr <- data.frame(alpha = c(res$grid, res$alpha), logLik = c(res$gll, res$logLik))
+  pr <- pr[order(pr$alpha), ]
+  pr <- pr[!duplicated(pr$alpha), ]
+  supported <- is.finite(pr$logLik) & pr$logLik >= thresh
+  groups <- cumsum(c(TRUE, diff(supported) != 0))
+  pieces <- split(pr$alpha[supported], groups[supported])
+  intervals <- do.call(rbind, lapply(pieces, function(x) data.frame(lower = min(x), upper = max(x))))
+  rownames(intervals) <- NULL
+  alpha_ci <- range(pr$alpha[supported])
+  truncated <- c(lower = supported[1], upper = supported[nrow(pr)])
   boundary <- res$alpha <= alpha_range[1] * 1.01 || res$alpha >= alpha_range[2] * 0.99
-
-  df <- adapter$npar(best) + 1L          # model parameters plus alpha
-
-  ## optional parametric bootstrap
+  df <- adapter$npar(best) + 1L
   boot <- NULL
   alpha_ci_boot <- NULL
-  if(n_boot > 0){
-    sims <- tryCatch(adapter$simulate(best, n_boot), error = function(e) NULL)
-    if(is.null(sims)){
-      warning("Parametric bootstrap is unavailable for this model; returning the profile CI only.")
-    } else {
-      boot <- vapply(seq_len(n_boot), function(b) {
-        tryCatch(optim_alpha(response = sims[[b]])$alpha, error = function(e) NA_real_)
-      }, numeric(1))
+  bootstrap <- c(requested = n_boot, successful = 0L, failed = 0L)
+  if (n_boot > 0) {
+    sims <- tryCatch(adapter$simulate(best, n_boot), error = function(e) {
+      stop("Cannot simulate an aligned bootstrap response: ", conditionMessage(e), call. = FALSE)
+    })
+    boot <- vapply(seq_len(n_boot), function(b) {
+      tryCatch(optim_alpha(response = sims[[b]])$alpha, error = function(e) NA_real_)
+    }, numeric(1))
+    bootstrap["successful"] <- sum(is.finite(boot))
+    bootstrap["failed"] <- sum(!is.finite(boot))
+    if (bootstrap["successful"] >= 2L) {
       a_lo <- (1 - conf_level) / 2
       alpha_ci_boot <- stats::quantile(boot, c(a_lo, 1 - a_lo), na.rm = TRUE)
-    }
+    } else alpha_ci_boot <- c(NA_real_, NA_real_)
+    if (bootstrap["failed"] > 0 || bootstrap["successful"] < 2) warning(
+      "Bootstrap: ", bootstrap["successful"], " successful and ", bootstrap["failed"],
+      " failed replicates; at least two successful replicates are needed for an interval.", call. = FALSE)
   }
-
-  structure(list(alpha = res$alpha,
-                 alpha_ci = alpha_ci,
-                 alpha_ci_boot = alpha_ci_boot,
-                 boot = boot,
-                 logLik = res$logLik,
-                 df = df,
-                 nobs = adapter$n_sites,
-                 AIC = -2 * res$logLik + 2 * df,    # df already counts alpha
-                 model = best,
+  diagnostics <- adapter$diagnostics()
+  if (diagnostics$rejected > 0) warning("Rejected ", diagnostics$rejected,
+      " unreliable candidate fits; inspect `$diagnostics`.", call. = FALSE)
+  structure(list(alpha = res$alpha, alpha_ci = alpha_ci, alpha_ci_boot = alpha_ci_boot,
+                 boot = boot, logLik = res$logLik, df = df, nobs = adapter$nobs(best),
+                 AIC = -2 * res$logLik + 2 * df, model = best,
                  profile = data.frame(alpha = res$grid, logLik = res$gll),
-                 engine = adapter$label,
-                 family = adapter$family,
+                 engine = adapter$label, family = adapter$family,
                  ifc = list(model = model, area_transform = area_transform),
-                 alpha_range = alpha_range,
-                 conf_level = conf_level,
-                 boundary = boundary,
-                 call = NULL),
-            class = "ifc_optim")
+                 alpha_range = alpha_range, conf_level = conf_level, boundary = boundary,
+                 alpha_ci_intervals = intervals, alpha_ci_truncated = truncated,
+                 bootstrap = bootstrap, diagnostics = diagnostics,
+                 comparison = adapter$comparison(best), call = NULL), class = "ifc_optim")
 }
 
 # Run the (possibly multi-model) optimization for any adapter, returning a single
@@ -314,29 +347,23 @@ run_ifc_optim <- function(adapter, dist_mat, model, patch_area, occ_sites,
                           area_transform, alpha_range, n_grid, n_boot,
                           conf_level, call) {
 
-  if(!inherits(dist_mat, "matrix") || nrow(dist_mat) != ncol(dist_mat)){
-    stop("`dist_mat` must be a square distance matrix.")
-  }
-  if(adapter$n_sites != nrow(dist_mat)){
-    stop("The model must have the same number of sites as rows in `dist_mat`.")
-  }
+  .check_distances(dist_mat)
+  if (adapter$n_sites != nrow(dist_mat)) stop("The model must have the same number of sites as rows in `dist_mat`.")
+  if (!is.numeric(model) || !length(model) || any(!is.finite(model)) ||
+      any(model != floor(model)) || any(!model %in% 1:4)) stop("`model` must be integer value(s) in 1:4.")
   model <- as.integer(model)
-  if(any(is.na(model)) || any(!model %in% 1:4)){
-    stop("`model` must be value(s) in 1:4. See `ifc()`.")
-  }
-  if(any(model > 1) && is.null(patch_area)){
-    stop("`patch_area` is required for models 2, 3, and 4. See `ifc()`.")
-  }
+  if (any(model > 1) && is.null(patch_area)) stop("`patch_area` is required for models 2, 3, and 4.")
+  .check_scalar(n_grid, "n_grid", lower = 3, integer = TRUE)
+  .check_scalar(n_boot, "n_boot", lower = 0, integer = TRUE)
+  .check_scalar(conf_level, "conf_level", lower = 0, upper = 1, open_lower = TRUE, open_upper = TRUE)
   area_transform <- match.arg(area_transform, c("none", "log"), several.ok = TRUE)
-
-  ## default search range from the pairwise distances
   dvec <- lower(dist_mat)
   dpos <- dvec[dvec > 0]
-  if(is.null(alpha_range)){
-    alpha_range <- c(min(dpos) / 5, max(dvec) * 2)
-  }
-  if(length(alpha_range) != 2 || alpha_range[1] <= 0 || alpha_range[1] >= alpha_range[2]){
-    stop("`alpha_range` must be a length-2 vector of positive, increasing values.")
+  if (!length(dpos)) stop("At least one positive pairwise distance is required to identify a scale.")
+  if (is.null(alpha_range)) alpha_range <- c(min(dpos) / 5, max(dvec) * 2)
+  if (!is.numeric(alpha_range) || length(alpha_range) != 2L || any(!is.finite(alpha_range)) ||
+      alpha_range[1] <= 0 || alpha_range[1] >= alpha_range[2]) {
+    stop("`alpha_range` must be a length-2 vector of finite positive, increasing values.")
   }
 
   ## build the grid of (model, area_transform) combinations

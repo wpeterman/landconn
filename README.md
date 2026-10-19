@@ -27,7 +27,7 @@ loc <- data.frame(x = runif(10, 0, 10),
 ## Create a pairwise distance matrix (a `land_dist` object)
 d_mat <- dist_mat(loc)
 
-## Set alpha (average dispersal distance) and indicate occupied sites
+## Set alpha (exponential decay scale) and indicate occupied sites
 alpha <- 3
 occ_sites <- c(0, 0, 1, 1, 0, 1, 0, 0, 1, 1)
 
@@ -69,3 +69,35 @@ from R through `JuliaConnectoR` (functions `run_cs()` and `omni_cs()`). These re
 local Julia installation and are demonstrated in
 `vignette("getting-started", package = "landconn")`.
 
+
+## Choosing and checking a workflow
+
+Read `vignette("getting-started", package = "landconn")` for incidence connectivity,
+`vignette("model-engines", package = "landconn")` for supported model engines,
+missing responses, diagnostics and uncertainty, and
+`vignette("circuitscape-workflows", package = "landconn")` for polygon cores,
+source/ground inputs, map outputs and Julia threads.
+
+`ifc_optim()` retains template weights, offsets, subsets and controls. It rejects
+unreliable candidate fits and reports bootstrap failures and profile support that
+reaches a search limit. Its alpha estimates describe association at a distance
+scale; they do not independently measure dispersal.
+
+Circuitscape input IDs and habitat masks are preserved. Pairwise matrices carry
+node-ID dimension names; one-to-all/all-to-one return every ID in a two-column
+matrix. Advanced mode returns a complete voltage grid. High current is conditional
+on the circuit design and is not a calibrated movement probability.
+
+## Development validation
+
+The standard R suite excludes Julia unless explicitly enabled. To run the optional
+real-solver checks in a fresh R session, set `JULIA_BINDIR` to the Julia bin folder,
+`JULIA_NUM_THREADS=2`, and `LANDCONN_RUN_JULIA=true`, then run:
+
+```r
+devtools::test(filter = "julia-integration", stop_on_failure = TRUE)
+```
+
+The optional CI job pins Circuitscape 5.17.1 with Julia 1.12 on Windows and Linux.
+R package-check CI covers release R on Windows, macOS and Linux, plus Linux R-devel.
+Configured CI coverage is separate from checks actually completed on a checkout.

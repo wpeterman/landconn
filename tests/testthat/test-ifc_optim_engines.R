@@ -64,7 +64,13 @@ test_that("unmarked occu template is supported", {
   ## (singular Hessian); ifc_optim() refits with real connectivity. Silence it here.
   oc0 <- suppressWarnings(unmarked::occu(~1 ~ connectivity, data = umf))
 
-  fit <- ifc_optim(oc0, dist_mat = s$d, model = 1)
+  diagnostics <- character()
+  fit <- withCallingHandlers(ifc_optim(oc0, dist_mat = s$d, model = 1), warning = function(w) {
+    diagnostics <<- c(diagnostics, conditionMessage(w))
+    invokeRestart("muffleWarning")
+  })
+  if (fit$diagnostics$rejected > 0) expect_match(diagnostics, "unreliable candidate fits")
+  else expect_length(diagnostics, 0)
   expect_s3_class(fit, "ifc_optim")
   expect_identical(fit$engine, "unmarkedFitOccu")
   expect_equal(fit$nobs, s$n)

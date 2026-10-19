@@ -19,7 +19,8 @@ coordinates. Returns a \code{land_dist} object.}
 with four model formulations. Returns an \code{ifc} object with \code{print}, \code{summary},
 and \code{plot} methods.}
 \item{\code{\link[=ifc_optim]{ifc_optim()}}}{Estimate the incidence scale parameter \code{alpha} by optimizing
-the fit of a GLM whose predictor is the connectivity from \code{\link[=ifc]{ifc()}}.}
+the likelihood of a GLM, negative-binomial, or supported single-season
+unmarked model whose state predictor includes connectivity from \code{\link[=ifc]{ifc()}}.}
 \item{\code{\link[=lower]{lower()}}}{Extract the lower triangle of a distance matrix as a vector.}
 \item{\code{\link[=run_cs]{run_cs()}}}{Run 'Circuitscape' from R (via 'JuliaConnectoR') to produce
 current maps or resistance distances across a resistance surface.}

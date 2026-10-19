@@ -2,7 +2,7 @@
 % Please edit documentation in R/run_cs.R
 \name{run_cs}
 \alias{run_cs}
-\title{Run Julia version of CIRCUITSCAPE from R}
+\title{Run Circuitscape from R}
 \usage{
 run_cs(
   JULIA_HOME = NULL,
@@ -33,99 +33,152 @@ run_cs(
 )
 }
 \arguments{
-\item{JULIA_HOME}{Path to the folder containing the Julia binary (See Details).}
+\item{JULIA_HOME}{Character path to the Julia binary directory. An already
+running JuliaConnectoR session is reused; restart R to change Julia binaries.}
 
-\item{r}{Accepts a RasterLayer object or SpatRaster.}
+\item{r}{A single-layer \code{SpatRaster} or \code{RasterLayer} with square cells.
+Values must be finite and positive. Use \code{NA} for excluded habitat cells.}
 
-\item{input_locs}{Provide a \code{\link[sp]{SpatialPoints}} object, \code{sf} point object, or \code{sf} polygon object.}
+\item{input_locs}{Spatial points or polygons as a \code{SpatVector}, \code{sf}, or
+supported \code{sp} object. Points must occupy distinct valid habitat cells.
+Polygon cells with one ID form a core. May be \code{NULL} when \code{regions} is supplied.}
 
-\item{regions}{If providing a point file for \code{input_locs}, specify short-circuit regions that overlap the points. Provide as \code{sf} polygon object. If \code{regions} are provided, your location points will not be used directly, but a random point from within each region will be used. (Default = NULL)}
+\item{regions}{Optional polygons (\code{sf} or \code{SpatVector}) defining short-circuit
+regions. When supplied, these replace \code{input_locs}: one valid raster cell is
+sampled within each region ID for its focal node. Set a seed before calling
+for reproducible sampling. Default is \code{NULL}.}
 
-\item{field}{(Default = NULL). Can be used to designate the identity of points or polygons when converting them to raster objects.If providing a polygon (SpatVector or sf POLYGON) this must be specified as the field name to get patch ID values from.}
+\item{field}{Optional name of a numeric ID column. IDs must be positive integers
+no greater than \code{2^53 - 1}. Without a field, IDs are the feature row numbers.
+Supplied IDs are preserved. Invalid fields or missing cores produce an error.}
 
-\item{CurrentMap}{Logical. If TRUE, the cumulative current resistance map will be generated during the CS run (Default = TRUE)}
+\item{CurrentMap}{Logical, whether to write current maps (default \code{TRUE}).
+Requesting \code{output = "raster"} enables this automatically.}
 
-\item{cumulative_map_only}{Only write individual pairwise current maps, or also write each pairwise current map? (Default = TRUE)}
+\item{cumulative_map_only}{Logical, default \code{TRUE}: write the cumulative map
+without individual pair maps. \code{FALSE} also reads individual current maps into
+the returned raster. Advanced mode has a single current map.}
 
-\item{VoltageMaps}{Logical. If TRUE, voltage maps will be produced.}
+\item{VoltageMaps}{Logical, write voltage maps and include them in raster
+output (default \code{FALSE}).}
 
-\item{scenario}{Specify 'pairwise' (Default), 'one-to-all', 'all-to-one', or 'advanced'. See CIRCUITSCAPE guide for details on usage.}
+\item{scenario}{One of \code{"pairwise"} (default), \code{"one-to-all"}, \code{"all-to-one"},
+or \code{"advanced"}. Return structures differ by scenario; see Value.}
 
-\item{Neighbor_Connect}{Specify 4 or 8 neighbor connection scheme (Default = 8)}
+\item{Neighbor_Connect}{Either 8 (default, including diagonal neighbors) or 4
+(cardinal neighbors only).}
 
-\item{output_dir}{Directory where CS results will be written. Only specify if Circuitscape current map outputs are requested. It is critical that there are NO SPACES in the directory, as this may cause the function to fail.}
+\item{output_dir}{Existing directory for solver results. Defaults to the R
+session temporary directory. Result maps are retained there.}
 
-\item{output_name}{Name to be applied to output files. Defaults to using the raster layer names.}
+\item{output_name}{Single filename stem, without directory separators.
+Defaults to the habitat layer name. Use a new stem to keep runs separate.}
 
-\item{output}{Specify either "matrix" or "raster". "matrix" will return the pairwise resistance matrix, while "raster" (Default) will return a \code{spatRaster} or \code{RasterLayer} object of the cumulative current map. The raster map can only be returned if \code{CurrentMap=TRUE}}
+\item{output}{\code{"raster"} (default) for current/voltage maps, or \code{"matrix"}
+for the scenario's numeric solver result.}
 
-\item{pairs_to_include}{Default is NULL. If you wish to use the advanced CIRCUITSCAPE setting mode to include or exclude certain pairs of sample locations, provide a vector consisting of 1 (keep) or 0 (drop) for each pairwise observation (see example). This is an option if you do not want to assess all pairwise observations.}
+\item{pairs_to_include}{Optional vector of 0/1 values for pairwise mode, one
+per pair in the column-wise lower triangle of a matrix ordered by increasing
+node ID. At least one pair must be retained. Other scenarios reject this option.}
 
-\item{variable_source}{When using 'one-to-all', 'all-to-one', or 'advanced' modes. Provide a two-column data frame or matrix with the first column being point/patch ID and the second column being the input source strength. Must be specified in conjunction with \code{variable_ground} in advanced mode. Can be specified by itself in 'one-to-all' and 'all-to-one'.}
+\item{variable_source}{Optional two-column numeric table: node ID, current
+strength in amperes. Values must be nonnegative, with at least one positive
+source. In one-to-all/all-to-one, unlisted IDs retain Circuitscape's default
+unit strength. In advanced mode, only listed IDs inject current and a
+\code{variable_ground} table is required. Not used in pairwise mode.}
 
-\item{variable_ground}{Required when using 'advanced' mode. Provide a two-column data frame or matrix with the first column being point/patch ID and the second column being in the input source strength. Must be specified in conjunction with \code{variable_source} in advanced mode.}
+\item{variable_ground}{Advanced-mode two-column numeric table: node ID,
+resistance to ground in the same resistance units as the modeled circuit.
+Zero gives a direct ground. Source and ground IDs must be disjoint.}
 
-\item{parallel}{(Logical; Default = FALSE) Do you want to run CIRCUITSCAPE in parallel? Only consider when dealing with rasters >2 million cells and if using Mac or Linux OS.}
+\item{parallel}{Logical, use Julia threads (default \code{FALSE}). Threads must be
+configured before Julia starts; see Details.}
 
-\item{cores}{If \code{parallel = TRUE}, how many cores should be used for parallel processing?}
+\item{cores}{Optional positive integer thread count, used only with
+\code{parallel = TRUE}. It sets \code{JULIA_NUM_THREADS} before a new Julia session and
+must equal the thread count of an existing session. A mismatch is an error.}
 
-\item{cholmod}{(Logical; Default = TRUE). Should the cholmod solver be used?}
+\item{cholmod}{Logical, use the direct CHOLMOD solver (\code{TRUE}, default) or
+the iterative \code{cg+amg} solver (\code{FALSE}).}
 
-\item{precision}{(Logical; Default = FALSE). Should experimental single precision method be used? See details.}
+\item{precision}{Logical: \code{FALSE} (default) for double precision or \code{TRUE}
+for single precision. The strings \code{"double"} and \code{"single"} are also accepted.}
 
-\item{is_resistance}{Default = TRUE. Is the landscape represented as a resistance (TRUE) or conductance (FALSE) surface?}
+\item{is_resistance}{Logical, whether \code{r} represents resistance (\code{TRUE},
+default) or conductance (\code{FALSE}).}
 
-\item{focal_node_current_zero}{Set focal node current to 0 (Default = FALSE). May help with visualization of current flows in mapping.}
+\item{focal_node_current_zero}{Logical, set active focal-node currents to
+zero in maps (default \code{FALSE}); resistance values are unaffected.}
 
-\item{max_map}{Should maximum current map be created and saved (Default = FALSE)?}
+\item{max_map}{Logical, also save the maximum current map (default \code{FALSE}).
+This extra file is not included in the returned raster.}
 
-\item{remove_files}{Remove temporary files. Default is TRUE.}
+\item{remove_files}{Logical, remove temporary input grids/configuration on
+success and failure (default \code{TRUE}). Solver output maps are retained.}
 
-\item{silent}{Printing of output from Circuitscape will be suppressed unless an error occurs (Default = TRUE)}
+\item{silent}{Logical, request suppressed solver messages (default \code{TRUE}).
+Errors retain the original Julia condition text.}
 }
 \value{
-Function will save all output files created by CIRCUITSCAPE. Can choose to have a Full square distance matrix or Raster objects of the current maps returned to R. Raster object will be SpatRaster or RasterLayer, depending upon input format.
+With \code{output = "matrix"}: pairwise mode returns a square resistance
+matrix with row and column names equal to node IDs. One-to-all/all-to-one
+return a two-column matrix (\code{node_id}, \code{resistance}), one row per focal ID.
+Advanced mode returns the complete voltage matrix in raster row/column order,
+without stripping any row or column. Missing/excluded cells follow the
+solver's nodata convention.
+
+With \code{output = "raster"}: a \code{SpatRaster} for SpatRaster input, or a legacy
+Raster object for RasterLayer input. The first layer is cumulative current
+(the single current grid in advanced mode). Requested individual currents
+follow, then voltages. Layers carry the habitat CRS and file-based names.
+Current maps express modeled current under the specified sources and grounds;
+they are not calibrated movement probabilities.
 }
 \description{
-Execute julia CS from R
+Prepare focal-node and habitat grids, run the Julia version of Circuitscape,
+and return resistance values, voltages, or current maps.
 }
 \details{
-There is extensive documentation for Circuitscape here: https://docs.circuitscape.org/Circuitscape.jl/latest/ . Not all features and functionality have been built into this R function.
+Focal and short-circuit grids use \code{-9999} nodata and double precision,
+preserving IDs and preventing empty cells from becoming positive unsigned
+values. The Julia ASCII reader is temporarily set to double precision to
+prevent large IDs from being merged during import, then its prior setting
+is restored. Every core must cover valid habitat. Coordinate systems must agree
+when both inputs declare one; undeclared coordinates are assumed aligned.
 
-Focal-node and short-circuit region grids use \code{-9999} for cells outside the
-supplied locations or regions. They are written in double precision so that
-the negative nodata value and integer node IDs are preserved, rather than
-converting empty cells to a positive unsigned value that could become an
-unintended focal node or short-circuit region.
+In advanced mode, one source or ground is attached to the first represented
+cell of each listed core. Polygon cells of that ID are already collapsed into
+one circuit node, so the requested source is a total current per core, not
+per cell. A point ID spanning several cells is ambiguous in advanced mode and
+is rejected. Ground values are resistances, including when \code{r} is conductance.
+
+For parallel work, start a fresh R session and set \code{cores}, or set
+\code{JULIA_NUM_THREADS} before any Julia call. The actual thread count is checked;
+it cannot be changed in a running Julia process. The R environment variables
+are restored after the call, but the Julia process persists. Verified locally
+with Julia 1.12.6 and Circuitscape 5.17.1. Compatibility with other versions
+requires running the optional integration suite.
+
+See \code{vignette("circuitscape-workflows", package = "landconn")} for polygon,
+source/ground, output and parallel examples, and
+\url{https://docs.circuitscape.org/Circuitscape.jl/latest/options/} for solver options.
 }
 \examples{
 \dontrun{
 library(terra)
-library(landconn)
-f <- system.file("extdata/resist.tif", package = "landconn")
-r <- rast(f)
-
-## Set this to the Julia 'bin' folder on your own machine
-jl_home <- "C:/Users/<user>/AppData/Local/Programs/Julia-1.11.4/bin/"
-
-pts <- vect(rbind(c(250, 250),
-                  c(250, 1750),
-                  c(1750, 1750),
-                  c(1750, 250)))
-plot(r)
-plot(pts, pch = 19, cex = 3, add = TRUE)
-cs_out <- run_cs(JULIA_HOME = jl_home,
-                 r = r,
-                 input_locs = pts,
-                 output_dir = tempdir(),
-                 output_name = 'test',
-                 cholmod = TRUE,
-                 precision = FALSE,
-                 is_resistance = TRUE,
-                 remove_files = TRUE,
-                 silent = TRUE)
-plot(cs_out)
+r <- rast(nrows = 8, ncols = 8, xmin = 0, xmax = 8, ymin = 0, ymax = 8,
+          crs = "EPSG:3857")
+values(r) <- 1
+pts <- vect(cbind(c(1.5, 6.5), c(1.5, 6.5)), crs = crs(r))
+pts$core_id <- c(11L, 44L)
+cores <- buffer(pts, width = 0.6)
+distances <- run_cs(Sys.getenv("JULIA_BINDIR"), r, cores, field = "core_id",
+                    CurrentMap = FALSE, output = "matrix")
+distances # resistance matrix named by core ID
 }
+}
+\seealso{
+\code{\link[=omni_cs]{omni_cs()}}, \code{\link[=julia_packages]{julia_packages()}}
 }
 \author{
 Bill Peterman \href{mailto:peterman.73@osu.edu}{peterman.73@osu.edu}

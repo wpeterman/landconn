@@ -22,17 +22,21 @@ ifc_modsel(..., rank = c("AICc", "AIC", "BIC"))
 A data frame of class \code{ifc_modsel}, one row per model, sorted best first, with
 columns: \code{model} (label), \code{K} (parameter count), \code{alpha}, \code{logLik}, \code{AIC}, \code{AICc},
 \code{BIC}, \code{delta} (difference from the best model on the ranking criterion), and
-\code{weight} (Akaike weight). Models within about 2 \code{delta} units of the best have
+\code{weight} (normalized relative weight; Akaike weight for AIC/AICc). Models within about 2 \code{delta} units of the best have
 comparable support.
 }
 \description{
 Rank two or more \code{\link[=ifc_optim]{ifc_optim()}} fits (or the fits inside an \code{ifc_optim_set}) by an
 information criterion, with delta values and Akaike weights. The number of parameters
-(\code{K}) counts the GLM coefficients, any dispersion parameter, and the optimized \code{alpha}.
+(\code{K}) counts the engine parameters, any estimated dispersion parameter, and the optimized \code{alpha}.
 }
 \details{
 Comparisons assume the fits share the same response and data. The function
-warns if the number of observations differs across fits. Weights are
+stops if response, modeled rows, weights, likelihood family or sample size
+differ. Objects fitted before comparison metadata was recorded must be refit.
+A criterion undefined for all fits is an error; individual undefined candidates
+remain unranked with NA weights. For BIC, weights are normalized BIC weights,
+not Akaike weights. Weights are
 \eqn{w_i = \exp(-\Delta_i / 2) / \sum_j \exp(-\Delta_j / 2)} and sum to 1.
 }
 \examples{

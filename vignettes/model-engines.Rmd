@@ -1,0 +1,210 @@
+---
+title: "Fitting and checking connectivity models"
+author: "Bill Peterman"
+output:
+  rmarkdown::html_vignette:
+    number_sections: true
+    toc: true
+vignette: >
+  %\VignetteIndexEntry{Fitting and checking connectivity models}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", fig.width = 6, fig.height = 4.25)
+```
+
+# Choose a likelihood and retain the site network
+
+Start with `vignette("getting-started", package = "landconn")` for the four
+incidence formulations. This guide explains how the same connectivity predictor
+enters different likelihoods and what the fitted alpha can tell you.
+
+Alpha is a distance scale in `exp(-distance / alpha)`. When estimated from a
+response, it describes the association between that response and network
+connectivity. Interpreting it as a measured mean dispersal distance requires
+independent biological evidence. A profile with little curvature may support a
+wide range of scales.
+
+```{r data}
+library(landconn)
+set.seed(24)
+n <- 80
+sites <- data.frame(x = runif(n, 0, 20), y = runif(n, 0, 20))
+d <- dist_mat(sites)
+truth <- as.numeric(ifc(3, d, model = 1, scale = TRUE))
+dat <- data.frame(y = 2 + 5 * truth + rnorm(n, sd = 0.5),
+                  connectivity = 0, weight = runif(n, 0.5, 2),
+                  baseline = rnorm(n, sd = 0.2))
+```
+
+Each row of the data corresponds to the same row of `d`. Coordinate values here
+are simulated map units. Use projected coordinates if you need distances in
+meters. Missing or nonnumeric coordinates are rejected.
+
+# Preserve a GLM template
+
+The formula interface creates a GLM internally. Pass a fitted template to retain
+settings such as weights, offsets, subsets and convergence controls.
+
+```{r glm}
+template <- glm(y ~ connectivity + offset(baseline), data = dat,
+                 weights = weight, family = gaussian(),
+                 control = glm.control(maxit = 50))
+fit <- ifc_optim(template, dist_mat = d, alpha_range = c(0.5, 15), n_grid = 30)
+summary(fit)
+```
+
+**How to read the output:** `alpha` is the fitted distance scale. The displayed
+coefficient table is conditional on that alpha, so its standard errors do not
+include scale-estimation uncertainty. `df` includes the model's coefficients,
+estimated dispersion and one extra parameter for alpha. Weights and offsets
+retain their original meaning; an offset remains fixed with coefficient one.
+
+```{r profile, fig.alt="Likelihood profile for connectivity scale with the estimate and grid interval marked."}
+plot(fit)
+fit$alpha_ci_intervals
+fit$alpha_ci_truncated
+```
+
+**How to read the profile:** the red line identifies the estimate, and the
+horizontal threshold defines approximate likelihood support. Each row of
+`alpha_ci_intervals` is a connected set of supported grid values. Several rows
+mean that the envelope `alpha_ci` spans a gap with less support. A `TRUE`
+truncation flag means support reaches a search limit: widen `alpha_range` before
+treating that endpoint as a bounded uncertainty limit. Increase `n_grid` to check
+that coarse resolution is not hiding a peak or crossing.
+
+# Missing responses and bootstrap intervals
+
+An unobserved response does not remove its site from the connectivity network.
+The model's likelihood uses observed rows, and BIC/AICc use that fitted sample
+size. Parametric simulation and refitting retain the original missingness and
+subset alignment.
+
+```{r missing}
+missing_dat <- dat
+missing_dat$y[1:4] <- NA
+set.seed(25)
+boot_fit <- ifc_optim(y ~ connectivity, data = missing_dat, dist_mat = d,
+                       family = gaussian(), alpha_range = c(0.5, 15),
+                       n_grid = 15, n_boot = 5)
+nobs(boot_fit)
+boot_fit$bootstrap
+boot_fit$alpha_ci_boot
+```
+
+**How to read this output:** the network still has 80 sites, but the likelihood
+uses 76 observed responses. `bootstrap` distinguishes requested, successful and
+failed replicates. Five replicates keep this teaching example fast and are not
+enough for a stable scientific interval. Increase the number for analysis, check
+failures and boundary estimates, and examine the bootstrap distribution. An
+interval requires at least two successful replicates.
+
+GLM and negative-binomial bootstrapping currently require a simple response
+column. A fit such as `log(y) ~ connectivity` can be optimized, but requesting its
+bootstrap is rejected: simulated values must not be logged a second time.
+Structured binomial responses also require a separate response-construction
+contract and are excluded from this bootstrap interface.
+
+# Negative-binomial counts
+
+```{r nb}
+if (requireNamespace("MASS", quietly = TRUE)) {
+  set.seed(26)
+  counts <- data.frame(count = rnbinom(n, mu = exp(0.5 + 1.5 * truth), size = 3),
+                       connectivity = 0)
+  nb0 <- MASS::glm.nb(count ~ connectivity, data = counts)
+  nb_fit <- ifc_optim(nb0, dist_mat = d, alpha_range = c(0.5, 15), n_grid = 15)
+  nb_fit
+}
+```
+
+The log link models expected counts as `exp(linear predictor)`. A connectivity
+coefficient is therefore on the log-count scale; `exp(beta * change)` is the
+expected count ratio for the specified change in connectivity, conditional on
+alpha and other predictors. The dispersion parameter is re-estimated at each
+candidate scale and counted in the information criteria.
+
+# Occupancy with imperfect detection
+
+Supported unmarked templates are single-season `occu()` and `pcount()` models.
+Connectivity must occur in their state formula and site covariates, not in the
+detection formula. Other subclasses fail explicitly instead of assuming that
+their response structures behave like a single-season response matrix.
+
+```{r occupancy}
+if (requireNamespace("unmarked", quietly = TRUE)) {
+  set.seed(27)
+  occupied <- rbinom(n, 1, plogis(-0.5 + 2 * truth))
+  detections <- matrix(occupied * rbinom(n * 3, 1, 0.6), n, 3)
+  umf <- unmarked::unmarkedFrameOccu(detections,
+                                    siteCovs = data.frame(connectivity = truth))
+  occ0 <- unmarked::occu(~1 ~connectivity, data = umf)
+  occ_fit <- ifc_optim(occ0, dist_mat = d, alpha_range = c(0.5, 15), n_grid = 12)
+  occ_fit
+}
+```
+
+This model separates occupancy from detection. Occupancy coefficients are on the
+logit scale, so use the logistic inverse `plogis()` to obtain probabilities from
+the state linear predictor. Detection coefficients have their own link and
+interpretation. Repeated surveys support their estimation; a connectivity
+optimization cannot repair an inadequate detection design. Binary data may
+identify alpha weakly even when coefficient estimation converges.
+
+For abundance, the following complete template illustrates a Poisson N-mixture
+model. It is shown without execution to keep vignette building short.
+
+```{r abundance, eval=FALSE}
+set.seed(28)
+abundance <- rpois(n, lambda = exp(0.5 + truth))
+visits <- sapply(1:3, function(j) rbinom(n, size = abundance, prob = 0.6))
+umf_count <- unmarked::unmarkedFramePCount(visits,
+                  siteCovs = data.frame(connectivity = truth))
+count0 <- unmarked::pcount(~1 ~connectivity, data = umf_count, K = 40)
+count_fit <- ifc_optim(count0, dist_mat = d, alpha_range = c(0.5, 15), n_grid = 12)
+count_fit
+```
+
+The abundance state link is logarithmic for this model; back-transform expected
+abundance with `exp()`. Check sensitivity to the integration upper bound `K`,
+distributional assumptions and detection. Convergence does not by itself establish
+identifiability or validate ecological interpretation.
+
+# Candidate diagnostics and fair comparisons
+
+Candidate fits with failed convergence checks, non-finite likelihoods, or detected
+separation are excluded. If all candidates fail, optimization stops with reasons.
+Otherwise a warning reports rejected candidates and `$diagnostics` retains their
+count and messages. Do not suppress that warning in an analysis without examining
+the failures. A bootstrap may add further rejected candidates.
+
+Information-criterion comparisons require the same response, modeled rows,
+weights and likelihood family. A Gaussian likelihood for a transformed response
+cannot be ranked against a different response scale by this interface.
+Undefined AICc values remain unranked; if none is defined, no best model is
+selected. With very small samples, fit candidates separately and deliberately
+choose a defined criterion. BIC-derived weights are labeled as BIC weights,
+rather than Akaike weights.
+
+# Quick reference
+
+```{r quick, eval=FALSE}
+fit <- ifc_optim(template, dist_mat = d) # retain the fitted model settings
+summary(fit)                           # coefficients conditional on alpha
+plot(fit)                              # likelihood support, not a movement track
+fit$alpha_ci_truncated                 # support reaching search limits
+fit$diagnostics                        # rejected candidates and their reasons
+fit$bootstrap                          # requested, successful and failed replicates
+```
+
+| Function | Purpose |
+|----------|---------|
+| `ifc_optim()` | Estimate alpha using a specified likelihood |
+| `ifc_modsel()` | Compare compatible fits using a defined information criterion |
+| `AICc()` | Apply the small-sample correction when it is defined |
+
+See `vignette("getting-started", package = "landconn")` for incidence models and
+`vignette("circuitscape-workflows", package = "landconn")` for resistance surfaces.

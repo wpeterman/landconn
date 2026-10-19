@@ -1,3 +1,9 @@
+# landconn 0.6.2
+* Preserve focal IDs across spatial classes and sampled regions; retain original habitat masks and generate exactly the requested unique omnidirectional nodes.
+* Correct scenario-specific solver returns, source/ground files, pair selection, precision and actual Julia thread checks. Load only raster output files and preserve caller state and original errors.
+* Preserve model-template settings and response alignment; count fitted observations correctly; reject unreliable candidates and unsupported bootstrap response expressions. Report interval components, search limits and bootstrap success counts.
+* Validate scientific input domains and comparable model selection; correct alpha equations and heatmap labels. Expand function help, self-contained guides, regression tests and R/Julia CI coverage.
+
 # landconn 0.6.1
 * Fixed `run_cs()` so empty focal-node and short-circuit region cells are written as `-9999` nodata instead of positive unsigned values that Circuitscape could treat as extra cores. Node IDs are preserved in double precision.
 

@@ -100,7 +100,7 @@ AICc.default <- function(object, ...) {
 #'
 #' Rank two or more [ifc_optim()] fits (or the fits inside an `ifc_optim_set`) by an
 #' information criterion, with delta values and Akaike weights. The number of parameters
-#' (`K`) counts the GLM coefficients, any dispersion parameter, and the optimized `alpha`.
+#' (`K`) counts the engine parameters, any estimated dispersion parameter, and the optimized `alpha`.
 #'
 #' @param ... Two or more `ifc_optim` objects, a single named list of them, or an
 #'   `ifc_optim_set`.
@@ -109,10 +109,14 @@ AICc.default <- function(object, ...) {
 #' @return A data frame of class `ifc_modsel`, one row per model, sorted best first, with
 #'   columns: `model` (label), `K` (parameter count), `alpha`, `logLik`, `AIC`, `AICc`,
 #'   `BIC`, `delta` (difference from the best model on the ranking criterion), and
-#'   `weight` (Akaike weight). Models within about 2 `delta` units of the best have
+#'   `weight` (normalized relative weight; Akaike weight for AIC/AICc). Models within about 2 `delta` units of the best have
 #'   comparable support.
 #' @details Comparisons assume the fits share the same response and data. The function
-#'   warns if the number of observations differs across fits. Weights are
+#'   stops if response, modeled rows, weights, likelihood family or sample size
+#'   differ. Objects fitted before comparison metadata was recorded must be refit.
+#'   A criterion undefined for all fits is an error; individual undefined candidates
+#'   remain unranked with NA weights. For BIC, weights are normalized BIC weights,
+#'   not Akaike weights. Weights are
 #'   \eqn{w_i = \exp(-\Delta_i / 2) / \sum_j \exp(-\Delta_j / 2)} and sum to 1.
 #' @seealso [ifc_optim()], [AICc()], [AIC.ifc_optim()]
 #' @examples
@@ -158,7 +162,14 @@ ifc_modsel <- function(..., rank = c("AICc", "AIC", "BIC")) {
 
   n <- vapply(fits, stats::nobs, numeric(1))
   if(length(unique(n)) > 1){
-    warning("Fits have different numbers of observations; the comparison may be invalid.")
+    stop("Fits have different numbers of observations; refit to the same modeled rows.")
+  }
+  keys <- lapply(fits, function(f) f$comparison)
+  if (any(vapply(keys, is.null, logical(1)))) {
+    stop("Refit older objects to record likelihood and response comparability metadata.")
+  }
+  if (!all(vapply(keys, function(x) isTRUE(all.equal(x, keys[[1]], check.attributes = TRUE)), logical(1)))) {
+    stop("Fits must use the same response, modeled rows, weights, and likelihood family.")
   }
 
   K     <- vapply(fits, function(f) attr(stats::logLik(f), "df"), numeric(1))
@@ -169,8 +180,13 @@ ifc_modsel <- function(..., rank = c("AICc", "AIC", "BIC")) {
   alpha <- vapply(fits, function(f) f$alpha, numeric(1))
 
   ic    <- switch(rank, AICc = aicc, AIC = aic, BIC = bic)
-  delta <- ic - min(ic, na.rm = TRUE)
-  w     <- exp(-0.5 * delta) / sum(exp(-0.5 * delta), na.rm = TRUE)
+  usable <- is.finite(ic)
+  if (!any(usable)) stop("No finite ", rank, " values are available; no best model can be selected. Use a defined criterion in ifc_modsel().")
+  if (any(!usable)) warning("Some models have undefined ", rank, " and remain unranked.", call. = FALSE)
+  delta <- rep(NA_real_, length(ic))
+  delta[usable] <- ic[usable] - min(ic[usable])
+  w <- rep(NA_real_, length(ic))
+  w[usable] <- exp(-0.5 * delta[usable]) / sum(exp(-0.5 * delta[usable]))
 
   tab <- data.frame(model  = labs,
                     K      = K,
@@ -180,7 +196,7 @@ ifc_modsel <- function(..., rank = c("AICc", "AIC", "BIC")) {
                     AICc   = round(aicc, 2),
                     BIC    = round(bic, 2),
                     delta  = round(delta, 2),
-                    weight = round(w, 3),
+                    weight = w,
                     stringsAsFactors = FALSE)
   tab <- tab[order(ic), ]
   rownames(tab) <- NULL
@@ -192,7 +208,7 @@ ifc_modsel <- function(..., rank = c("AICc", "AIC", "BIC")) {
 #' @exportS3Method print ifc_modsel
 print.ifc_modsel <- function(x, ...) {
   cat("Incidence scale model selection (ranked by ", attr(x, "rank"), ")\n", sep = "")
-  cat("K counts GLM parameters plus the optimized alpha.\n\n")
+  cat("K counts engine parameters plus the optimized alpha.\n\n")
   print.data.frame(x, row.names = FALSE)
   invisible(x)
 }

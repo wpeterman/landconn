@@ -6,6 +6,10 @@
 #' locations, ready to pass to [ifc()].
 #'
 #' @param coords Provide a two-column array, matrix, or data.frame with xy coordinates of locations. The first column is x (easting/longitude) and the second is y (northing/latitude), in whatever distance units you want the output to be in.
+#' @details Coordinates must be numeric and complete. Missing values and character
+#'   columns are rejected instead of computing pair-specific distances from
+#'   different coordinate dimensions. Use projected coordinates for distances
+#'   in linear map units; this function does not calculate geodesic distances.
 #' @return An object of class `land_dist`: a square symmetric matrix whose entry
 #'   \[i, j\] is the distance between site i and site j, with zeros on the diagonal.
 #'   The matrix is in the same units as `coords`. It also carries the `"matrix"` class,
@@ -35,8 +39,10 @@
 
 dist_mat <- function(coords) {
 
-  if(dim(coords)[2] != 2){
-    stop("`coords` must be two columns representing xy coordinates")
+  if (!(is.matrix(coords) || is.data.frame(coords)) || length(dim(coords)) != 2L ||
+      ncol(coords) != 2L || !nrow(coords)) stop("`coords` must be two columns of coordinates.")
+  if (!all(vapply(as.data.frame(coords), is.numeric, logical(1))) || any(!is.finite(as.matrix(coords)))) {
+    stop("`coords` must contain only finite numeric coordinates, without missing values.")
   }
 
   d <- as.matrix(dist(coords))

@@ -17,3 +17,9 @@
 #'
 #' @name resist.tif
 #'
+#' @details This illustrative file has 200 rows and 200 columns, 10-unit cells,
+#'   extent 0 to 2000 on each axis, and resistance values from 1 to 100. It has no
+#'   declared coordinate reference system or physical distance units. Its original
+#'   generation procedure and empirical provenance are not recorded in the
+#'   repository; do not treat it as observed habitat or assign real-world units.
+NULL

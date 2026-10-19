@@ -28,6 +28,9 @@ connectivity across a continuous resistance surface with Circuitscape. It is wri
 readers who are new to the package. You do not need prior connectivity modeling
 experience, but a basic familiarity with R and with spatial data helps.
 
+For the specialized workflows, see `vignette("model-engines", package = "landconn")`
+and `vignette("circuitscape-workflows", package = "landconn")`.
+
 The incidence function workflow runs anywhere R does. The Circuitscape workflow needs a
 local Julia installation, so those sections are shown but not run here.
 
@@ -79,16 +82,17 @@ point to groups of sites that sit close together on the landscape.
 
 ## Choosing `alpha`
 
-`alpha` is the average dispersal distance of your organism, in the same units as the
-distances in `d_mat`. It enters a negative exponential that converts each pairwise
-distance into a probability of connection:
+`alpha` is an exponential decay scale, in the same units as the distances in
+`d_mat`. It enters a negative exponential that converts each pairwise distance
+into a relative connection weight:
 
 $$ p_{ij} = \exp\!\left(-\frac{1}{\alpha}\, d_{ij}\right) $$
 
-A small `alpha` means connection probability falls off quickly with distance, so only
-near neighbors contribute. A large `alpha` means even distant sites stay connected. Set
-`alpha` from what you know about the species' movement, and remember that it is on the
-same distance scale as your coordinates.
+A small `alpha` makes weights decline quickly with distance, so nearby sites
+dominate. A large `alpha` gives distant sites more weight. Species movement data
+can inform a chosen scale, but interpreting it as mean dispersal requires
+independent biological justification. The kernel alone does not establish an
+observed probability of movement.
 
 ```{r alpha}
 alpha <- 3
@@ -187,7 +191,7 @@ cor(c2_none, c2_log, method = "spearman")
 transforms reorder the sites, so the choice of transform is a modeling decision worth
 making deliberately rather than by default.
 
-## Estimating the dispersal scale (alpha)
+## Estimating the association scale (alpha)
 
 So far we set `alpha` by hand. Often you would rather let data tell you the scale. If you
 have a response measured at each site (occupancy, abundance, colonization), `ifc_optim()`
@@ -213,10 +217,11 @@ fit <- ifc_optim(abundance ~ connectivity, data = opt_dat,
 fit
 ```
 
-**How to read the output:** `alpha` is the estimated dispersal scale, in the distance
-units of your coordinates. It is the distance over which connection probability falls to
-about 37% (that is, `exp(-1)`) of its maximum. The profile confidence interval comes from
-the curvature of the log-likelihood around the estimate.
+**How to read the output:** `alpha` is the estimated association scale, in the distance
+units of your coordinates. It is the distance over which the connection weight falls to
+about 37% (that is, `exp(-1)`) of its maximum. It does not independently measure
+dispersal. The profile interval is a grid approximation to likelihood support. Inspect
+`alpha_ci_truncated` for search limits and `alpha_ci_intervals` for disjoint support.
 
 ```{r optim-plot, fig.alt = "Log-likelihood profile against alpha with the estimate and confidence interval marked."}
 plot(fit)
@@ -242,7 +247,7 @@ fit_b$alpha_ci_boot
 
 One caution: the model treats connectivity as a fixed predictor, so the standard errors
 that `summary(fit)` reports for the `connectivity` coefficient are conditional on the
-estimated `alpha` and are slightly optimistic. The interval on `alpha` itself comes from
+estimated `alpha` and do not include uncertainty from estimating that scale. The interval on `alpha` itself comes from
 the profile or the bootstrap, not from those standard errors.
 
 ## Comparing incidence models
@@ -276,7 +281,9 @@ plot(fits)
 sits highest, after the AICc penalty for parameters, is the best supported. Drill into it
 with `fits$best`, which is an ordinary fit with its own `summary()` and `plot()`.
 
-The information criteria are also available directly. Because the `K` for an `ifc_optim`
+Model comparisons require the same response, modeled rows, weights and likelihood
+family. An undefined criterion cannot select a best model. The information criteria
+are also available directly. Because the `K` for an `ifc_optim`
 fit counts `alpha`, you can compare a connectivity model against a null model with no
 connectivity term in one call:
 
@@ -291,27 +298,34 @@ AIC(fits$best, null)                              # alpha is counted for the ifc
 The formula interface above fits a GLM. To use another model class, fit it once with a
 placeholder `connectivity` term and pass the fitted object; `ifc_optim()` refits it across
 `alpha`. This works for negative binomial models (`MASS::glm.nb`) and for `unmarked`
-occupancy and abundance models, where `connectivity` is a site covariate. The parameter
+single-season `occu()` and `pcount()` models, where `connectivity` must appear in the state formula and site covariates. The parameter
 counts in the information criteria include each model's own parameters (the negative
 binomial dispersion, the detection parameters of an occupancy model) plus `alpha`.
 
-```{r engines, eval = FALSE}
-## Negative binomial counts
-library(MASS)
-nb_dat <- data.frame(count = counts, connectivity = 0)   # placeholder term
-nb0 <- glm.nb(count ~ connectivity, data = nb_dat)
-ifc_optim(nb0, dist_mat = d, model = 1)
-
-## unmarked occupancy: connectivity goes in the siteCovs
-library(unmarked)
-siteCovs(umf)$connectivity <- 0                          # placeholder
-occ0 <- occu(~1 ~ connectivity, data = umf)
-ifc_optim(occ0, dist_mat = d, model = 1)
+```{r engines}
+## A complete negative-binomial example, using the existing network above.
+if (requireNamespace("MASS", quietly = TRUE)) {
+  set.seed(41)
+  nb_dat <- data.frame(count = rnbinom(nrow(opt_dat),
+                                      mu = exp(0.3 + 2 * true_conn), size = 3),
+                       connectivity = 0)
+  nb0 <- MASS::glm.nb(count ~ connectivity, data = nb_dat)
+  nb_fit <- ifc_optim(nb0, dist_mat = opt_d, model = 1,
+                      alpha_range = c(0.5, 20), n_grid = 12)
+  nb_fit
+}
 ```
 
-**How to read this:** the result is the same `ifc_optim` object as before, with `print()`,
-`summary()`, `plot()`, and the information criteria, so everything in this vignette applies
-unchanged. Keep the template simple: complex offsets or weights may not survive the refit.
+**How to read this:** the returned object uses the same methods and information
+criteria as the Gaussian fit. Its parameter count includes the negative-binomial
+dispersion parameter and optimized alpha. This is a fitted association scale,
+not an independent observation of dispersal. GLM and negative-binomial template
+refits retain weights, offsets, subsets and controls. Original data and objects
+referenced by the model call must remain available.
+
+The fully constructed occupancy and abundance examples are in
+`vignette("model-engines", package = "landconn")`. That guide also explains
+missing responses, candidate-fit diagnostics, bootstrap limits and profile support.
 
 # Resistance-surface connectivity with Circuitscape
 
@@ -321,13 +335,14 @@ carries a cost to movement, and uses Circuitscape to compute current flow across
 
 The package ships a small example resistance raster.
 
-```{r raster}
+```{r raster, fig.alt = "Illustrative resistance raster with values from 1 to 100 and no declared physical units."}
 f <- system.file("extdata/resist.tif", package = "landconn")
 r <- terra::rast(f)
 terra::plot(r)
 ```
 
-**How to read this map:** cell values are resistance to movement, where higher values are
+**How to read this map:** the bundled raster is illustrative, with no declared CRS, physical units, or
+recorded generation procedure. Its values are relative resistance, where higher values are
 harder to cross. Circuitscape treats low-resistance cells as easier paths, so current
 concentrates where movement is cheapest.
 
@@ -363,12 +378,13 @@ terra::plot(cs_out)
 ```
 
 **How to read the result:** the returned raster is a cumulative current map. Bright,
-high-current cells are pinch points where movement is funneled and where connectivity is
-most vulnerable to loss. Diffuse current indicates many redundant pathways.
+high-current cells carry more modeled flow under the chosen resistance and focal-node design.
+They may identify candidate bottlenecks for further assessment; current alone does not establish
+movement rates or the effect of habitat loss. Diffuse current suggests alternative modeled pathways.
 
 `omni_cs()` wraps the same machinery to produce an omnidirectional current map, following
 Koen et al. (2014). It surrounds the landscape with nodes and runs an all-to-one analysis,
-which highlights connectivity without assuming particular source and destination points.
+which maps current under that perimeter-node design. It does not establish movement rates or the ecological effect of removing habitat.
 
 ```{r omni-cs, eval = FALSE}
 omni_r <- omni_cs(JULIA_HOME = jl_home,
@@ -390,8 +406,8 @@ library(landconn)
 loc   <- data.frame(x = runif(10, 0, 10), y = runif(10, 0, 10))
 d_mat <- dist_mat(loc)                 # a `land_dist` object
 
-## 2. Set dispersal scale and (optionally) patch areas and occupancy
-alpha     <- 3                         # average dispersal distance, in coordinate units
+## 2. Set decay scale and (optionally) patch areas and occupancy
+alpha     <- 3                         # exponential decay scale, in coordinate units
 p_a       <- runif(10, 5, 50)          # patch areas
 occ_sites <- c(0,0,1,1,0,1,0,0,1,1)    # 0/1 occupancy
 

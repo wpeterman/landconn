@@ -3,3 +3,5 @@
 ^LICENSE\.md$
 ^AGENTS\.md$
 ^\.Rhistory$
+^\.github$
+^REVIEW_FIXES\.md$
