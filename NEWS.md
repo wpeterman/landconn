@@ -1,3 +1,6 @@
+# landconn 0.6.1
+* Fixed `run_cs()` so empty focal-node and short-circuit region cells are written as `-9999` nodata instead of positive unsigned values that Circuitscape could treat as extra cores. Node IDs are preserved in double precision.
+
 # landconn 0.6.0
 * `ifc_optim()` is now a generic that works with model classes beyond `glm`. Besides the `formula` + `data` method, you can pass a fitted model that already contains a `connectivity` term and have it refit across `alpha`: a `glm`, a negative binomial model (`MASS::glm.nb`), or any `unmarked` model (with `connectivity` in the `siteCovs`).
 * The information criteria count each engine's parameters correctly (for example the negative binomial theta, or the detection parameters of an occupancy model) plus the optimized `alpha`.

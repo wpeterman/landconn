@@ -34,6 +34,12 @@
 #' @return Function will save all output files created by CIRCUITSCAPE. Can choose to have a Full square distance matrix or Raster objects of the current maps returned to R. Raster object will be SpatRaster or RasterLayer, depending upon input format.
 #'
 #' @details There is extensive documentation for Circuitscape here: https://docs.circuitscape.org/Circuitscape.jl/latest/ . Not all features and functionality have been built into this R function.
+#'
+#' Focal-node and short-circuit region grids use `-9999` for cells outside the
+#' supplied locations or regions. They are written in double precision so that
+#' the negative nodata value and integer node IDs are preserved, rather than
+#' converting empty cells to a positive unsigned value that could become an
+#' unintended focal node or short-circuit region.
 #' @examples
 #' \dontrun{
 #' library(terra)
@@ -379,10 +385,13 @@ run_cs <- function(JULIA_HOME = NULL,
     overwrite = TRUE
   )
 
+  ## Double precision preserves IDs and negative nodata even when rasterize()
+  ## creates an unsigned integer grid. NAflag alone does not prevent overflow.
   ## Point raster
   terra::writeRaster(
     x = input_locs_rast,
     filename = temp_loc,
+    datatype = "FLT8S",
     NAflag = -9999,
     overwrite = TRUE
   )
@@ -392,6 +401,7 @@ run_cs <- function(JULIA_HOME = NULL,
     terra::writeRaster(
       x = region_rast,
       filename = temp_poly,
+      datatype = "FLT8S",
       NAflag = -9999,
       overwrite = TRUE
     )

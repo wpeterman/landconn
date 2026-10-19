@@ -91,6 +91,12 @@ Execute julia CS from R
 }
 \details{
 There is extensive documentation for Circuitscape here: https://docs.circuitscape.org/Circuitscape.jl/latest/ . Not all features and functionality have been built into this R function.
+
+Focal-node and short-circuit region grids use \code{-9999} for cells outside the
+supplied locations or regions. They are written in double precision so that
+the negative nodata value and integer node IDs are preserved, rather than
+converting empty cells to a positive unsigned value that could become an
+unintended focal node or short-circuit region.
 }
 \examples{
 \dontrun{
